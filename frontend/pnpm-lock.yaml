@@ -104,6 +104,9 @@ dependencies:
   cmdk:
     specifier: ^1.0.0
     version: 1.1.1(@types/react-dom@18.3.7)(@types/react@18.3.27)(react-dom@18.3.1)(react@18.3.1)
+  country-state-city:
+    specifier: ^3.2.1
+    version: 3.2.1
   date-fns:
     specifier: ^3.6.0
     version: 3.6.0
@@ -3133,6 +3136,10 @@ packages:
 
   /country-flag-icons@1.6.4:
     resolution: {integrity: sha512-Z3Zi419FI889tlElMsVhCIS5eRkiLDWixr576J5DPiTe5RGxpbRi+enMpHdYVp5iK5WFjr8P/RgyIFAGhFsiFg==}
+    dev: false
+
+  /country-state-city@3.2.1:
+    resolution: {integrity: sha512-kxbanqMc6izjhc/EHkGPCTabSPZ2G6eG4/97akAYHJUN4stzzFEvQPZoF8oXDQ+10gM/O/yUmISCR1ZVxyb6EA==}
     dev: false
 
   /cross-spawn@7.0.6:
