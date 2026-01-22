@@ -1,0 +1,9 @@
+{
+  "exec": "node server.js",
+  "ext": "js,json",
+  "ignore": ["node_modules/", "uploads/"],
+  "watch": ["."],
+  "env": {
+    "NODE_ENV": "development"
+  }
+}

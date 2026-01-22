@@ -13,53 +13,88 @@ const shipmentSchema = new mongoose.Schema(
       ref: "User",
       required: true,
     },
+    shippingType: {
+      type: String,
+      enum: ["local", "international"],
+      required: true,
+      default: "local",
+    },
     sender: {
       name: { type: String, required: true },
       phone: { type: String, required: true },
-      address: { type: String, required: true },
-      city: { type: String, required: true },
+      email: { type: String, required: true },
+      address: { type: String },
+      street: { type: String, required: true },
       country: { type: String, required: true },
-    },
-    receiver: {
-      name: { type: String, required: true },
-      phone: { type: String, required: true },
-      address: { type: String, required: true },
+      state: { type: String, required: true },
       city: { type: String, required: true },
-      country: { type: String, required: true },
+      clientType: {
+        type: String,
+        enum: ["individual", "merchant"],
+        required: true,
+      },
+      companyName: { type: String },
+      commercialRegister: { type: String },
+      coordinates: {
+        lat: Number,
+        lng: Number,
+      },
     },
+    receivers: [
+      {
+        name: { type: String, required: true },
+        phone: { type: String, required: true },
+        email: { type: String },
+        address: { type: String },
+        street: { type: String, required: true },
+        country: { type: String, required: true },
+        state: { type: String, required: true },
+        city: { type: String, required: true },
+        coordinates: {
+          lat: Number,
+          lng: Number,
+        },
+      },
+    ],
     package: {
       type: {
         type: String,
-        enum: ["document", "parcel", "package"],
+        enum: [
+          "documents",
+          "electronics",
+          "clothing",
+          "books",
+          "gifts",
+          "food",
+          "other",
+        ],
         required: true,
       },
       weight: { type: Number, required: true },
-      dimensions: {
-        length: Number,
-        width: Number,
-        height: Number,
-      },
-      description: String,
-      value: Number,
-      quantity: { type: Number, default: 1 },
+      length: { type: Number, required: true },
+      width: { type: Number, required: true },
+      height: { type: Number, required: true },
+      description: { type: String, required: true },
+      value: { type: Number, required: true },
+      currency: { type: String, enum: ["USD", "SYP"], required: true },
+      fragile: { type: Boolean, default: false },
     },
-    service: {
-      type: {
-        type: String,
-        enum: ["standard", "express", "overnight"],
-        required: true,
-      },
-      deliveryTime: String,
+    shippingCompany: {
+      id: { type: String, required: true },
+      name: { type: String, required: true },
     },
     cost: {
       amount: { type: Number, required: true },
       currency: { type: String, enum: ["USD", "SYP"], required: true },
       paymentMethod: {
         type: String,
-        enum: ["wallet", "cash", "card"],
+        enum: ["wallet", "cod"],
         required: true,
       },
       isPaid: { type: Boolean, default: false },
+      volumetricWeight: { type: Number },
+      actualWeight: { type: Number },
+      billingWeight: { type: Number },
     },
     status: {
       type: String,
@@ -77,9 +112,9 @@ const shipmentSchema = new mongoose.Schema(
     },
     statusHistory: [
       {
-        status: String,
-        note: String,
-        location: String,
+        status: { type: String, required: true },
+        note: { type: String },
+        location: { type: String },
         timestamp: { type: Date, default: Date.now },
         updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
       },
@@ -95,10 +130,19 @@ const shipmentSchema = new mongoose.Schema(
       comment: String,
       date: Date,
     },
+    documents: [
+      {
+        filename: String,
+        originalName: String,
+        path: String,
+        size: Number,
+        uploadedAt: { type: Date, default: Date.now },
+      },
+    ],
   },
   {
     timestamps: true,
-  }
+  },
 );
 
 // Generate tracking number

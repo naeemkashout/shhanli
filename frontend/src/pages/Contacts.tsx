@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -34,9 +34,14 @@ import {
 } from "lucide-react";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { toast } from "sonner";
+import { GlobalCountrySelector } from "@/components/GlobalCountrySelector";
+import { SearchableStateSelector } from "@/components/SearchableStateSelector";
+import { GlobalCountry, GlobalState } from "@/data/globalLocations";
+import contactService, { CreateContactData } from "@/services/contactService";
 
 interface Contact {
-  id: string;
+  id?: string;
+  _id?: string;
   name: string;
   phone: string;
   email?: string;
@@ -129,7 +134,8 @@ const mockContacts: Contact[] = [
 
 export default function Contacts() {
   const { t, isRTL } = useLanguage();
-  const [contacts, setContacts] = useState<Contact[]>(mockContacts);
+  const [contacts, setContacts] = useState<Contact[]>([]);
+  const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [clientTypeFilter, setClientTypeFilter] = useState<string>("all");
@@ -138,39 +144,47 @@ export default function Contacts() {
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
   const [contactToDelete, setContactToDelete] = useState<Contact | null>(null);
-  const [formData, setFormData] = useState<Partial<Contact>>({
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [formData, setFormData] = useState<CreateContactData>({
     name: "",
     phone: "",
     email: "",
     address: "",
     street: "",
-    country: "سوريا",
+    country: "SY",
     state: "",
     city: "",
-    type: "both",
     clientType: "individual",
+    type: "both",
     companyName: "",
     commercialRegister: "",
   });
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
 
-  const getStatesForCountry = (countryName: string) => {
-    const country = countries.find((c) => c.name === countryName);
-    return country ? Object.keys(country.states) : [];
-  };
+  // Load contacts on component mount
+  useEffect(() => {
+    loadContacts();
+  }, []);
 
-  const getCitiesForState = (countryName: string, stateName: string) => {
-    const country = countries.find((c) => c.name === countryName);
-    return country && country.states[stateName]
-      ? country.states[stateName]
-      : [];
+  const loadContacts = async () => {
+    try {
+      setLoading(true);
+      const response = await contactService.getUserContacts();
+      setContacts(response.data || []);
+    } catch (error) {
+      console.error("Error loading contacts:", error);
+      toast.error("فشل في تحميل جهات الاتصال");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const filteredContacts = contacts.filter((contact) => {
     const matchesSearch =
       contact.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       contact.phone.includes(searchTerm) ||
-      contact.city.toLowerCase().includes(searchTerm.toLowerCase());
+      contact.city?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      contact.companyName?.toLowerCase().includes(searchTerm.toLowerCase());
 
     const matchesType = typeFilter === "all" || contact.type === typeFilter;
     const matchesClientType =
@@ -188,8 +202,8 @@ export default function Contacts() {
     if (!formData.phone?.trim()) {
       newErrors.phone = t("validation.phoneRequired");
     }
-    if (!formData.address?.trim()) {
-      newErrors.address = t("validation.streetRequired");
+    if (!formData.street?.trim()) {
+      newErrors.street = t("validation.streetRequired");
     }
     if (!formData.country) {
       newErrors.country = t("validation.countryRequired");
@@ -197,7 +211,7 @@ export default function Contacts() {
     if (!formData.state) {
       newErrors.state = t("validation.provinceRequired");
     }
-    if (!formData.city) {
+    if (!formData.city?.trim()) {
       newErrors.city = t("validation.cityRequired");
     }
 
@@ -208,7 +222,7 @@ export default function Contacts() {
       }
       if (!formData.commercialRegister?.trim()) {
         newErrors.commercialRegister = t(
-          "validation.commercialRegisterRequired"
+          "validation.commercialRegisterRequired",
         );
       }
     }
@@ -224,11 +238,11 @@ export default function Contacts() {
       email: "",
       address: "",
       street: "",
-      country: "سوريا",
+      country: "SY",
       state: "",
       city: "",
-      type: "both",
       clientType: "individual",
+      type: "both",
       companyName: "",
       commercialRegister: "",
     });
@@ -238,7 +252,20 @@ export default function Contacts() {
 
   const handleEditContact = (contact: Contact) => {
     setSelectedContact(contact);
-    setFormData({ ...contact });
+    setFormData({
+      name: contact.name,
+      phone: contact.phone,
+      email: contact.email || "",
+      address: contact.address || "",
+      street: contact.street,
+      country: contact.country,
+      state: contact.state,
+      city: contact.city,
+      clientType: contact.clientType,
+      type: contact.type,
+      companyName: contact.companyName || "",
+      commercialRegister: contact.commercialRegister || "",
+    });
     setErrors({});
     setIsEditDialogOpen(true);
   };
@@ -248,44 +275,62 @@ export default function Contacts() {
     setIsDeleteDialogOpen(true);
   };
 
-  const handleConfirmDelete = () => {
-    if (contactToDelete) {
-      setContacts((prev) => prev.filter((c) => c.id !== contactToDelete.id));
+  const handleConfirmDelete = async () => {
+    if (!contactToDelete) return;
+
+    try {
+      setIsSubmitting(true);
+      await contactService.deleteContact(
+        contactToDelete.id || contactToDelete._id,
+      );
+      await loadContacts();
       toast.success(t("contacts.deleteSuccess"));
       setIsDeleteDialogOpen(false);
       setContactToDelete(null);
+    } catch (error) {
+      console.error("Error deleting contact:", error);
+      toast.error("فشل في حذف جهة الاتصال");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
-  const handleSaveContact = () => {
+  const handleSaveContact = async () => {
     if (!validateForm()) {
       return;
     }
 
-    if (selectedContact) {
-      // Edit existing contact
-      setContacts((prev) =>
-        prev.map((c) =>
-          c.id === selectedContact.id
-            ? ({ ...formData, id: selectedContact.id } as Contact)
-            : c
-        )
-      );
-      toast.success(t("contacts.updateSuccess"));
-      setIsEditDialogOpen(false);
-    } else {
-      // Add new contact
-      const newContact: Contact = {
-        ...formData,
-        id: Date.now().toString(),
-      } as Contact;
-      setContacts((prev) => [...prev, newContact]);
-      toast.success(t("contacts.addSuccess"));
-      setIsAddDialogOpen(false);
-    }
+    try {
+      setIsSubmitting(true);
 
-    setSelectedContact(null);
-    setErrors({});
+      if (selectedContact) {
+        // Edit existing contact
+        await contactService.updateContact(
+          selectedContact.id || selectedContact._id,
+          formData,
+        );
+        toast.success(t("contacts.updateSuccess"));
+        setIsEditDialogOpen(false);
+      } else {
+        // Add new contact
+        await contactService.createContact(formData);
+        toast.success(t("contacts.addSuccess"));
+        setIsAddDialogOpen(false);
+      }
+
+      await loadContacts();
+      setSelectedContact(null);
+      setErrors({});
+    } catch (error: any) {
+      console.error("Error saving contact:", error);
+      if (error.message?.includes("Phone number already exists")) {
+        toast.error("رقم الهاتف موجود بالفعل");
+      } else {
+        toast.error("فشل في حفظ جهة الاتصال");
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
   };
   const { language } = useLanguage();
   const handleInputChange = (field: keyof Contact, value: string) => {
@@ -697,92 +742,57 @@ export default function Contacts() {
             {/* Location Selection */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
-                <Label htmlFor="country">
+                <Label className="text-sm font-medium text-gray-700">
                   {t("sender.country")} <span className="text-red-500">*</span>
                 </Label>
-                <Select
-                  value={formData.country || "سوريا"}
-                  onValueChange={(value) =>
+                <GlobalCountrySelector
+                  value={formData.country || ""}
+                  onChange={(country) =>
                     setFormData((prev) => ({
                       ...prev,
-                      country: value,
+                      country: country.code,
                       state: "",
                       city: "",
                     }))
                   }
-                >
-                  <SelectTrigger
-                    className={`mt-2 ${errors.country ? "border-red-500" : ""}`}
-                  >
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {countries.map((country) => (
-                      <SelectItem key={country.code} value={country.name}>
-                        {country.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                  className={`mt-2 ${errors.country ? "border-red-500" : ""}`}
+                />
                 {errors.country && (
                   <p className="mt-1 text-sm text-red-600">{errors.country}</p>
                 )}
               </div>
+
               <div>
-                <Label htmlFor="state">
+                <Label className="text-sm font-medium text-gray-700">
                   {t("sender.state")} <span className="text-red-500">*</span>
                 </Label>
-                <Select
+                <SearchableStateSelector
+                  countryCode={formData.country || ""}
                   value={formData.state || ""}
-                  onValueChange={(value) =>
-                    setFormData((prev) => ({ ...prev, state: value, city: "" }))
+                  onChange={(province) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      state: province.code,
+                      city: "",
+                    }))
                   }
-                  disabled={!formData.country}
-                >
-                  <SelectTrigger
-                    className={`mt-2 ${errors.state ? "border-red-500" : ""}`}
-                  >
-                    <SelectValue placeholder={t("common.selectState")} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {getStatesForCountry(formData.country || "").map(
-                      (state) => (
-                        <SelectItem key={state} value={state}>
-                          {state}
-                        </SelectItem>
-                      )
-                    )}
-                  </SelectContent>
-                </Select>
+                  className={`mt-2 ${errors.state ? "border-red-500" : ""}`}
+                />
                 {errors.state && (
                   <p className="mt-1 text-sm text-red-600">{errors.state}</p>
                 )}
               </div>
+
               <div>
-                <Label htmlFor="city">
+                <Label className="text-sm font-medium text-gray-700">
                   {t("sender.city")} <span className="text-red-500">*</span>
                 </Label>
-                <Select
+                <Input
                   value={formData.city || ""}
-                  onValueChange={(value) => handleInputChange("city", value)}
-                  disabled={!formData.state}
-                >
-                  <SelectTrigger
-                    className={`mt-2 ${errors.city ? "border-red-500" : ""}`}
-                  >
-                    <SelectValue placeholder={t("common.selectCity")} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {getCitiesForState(
-                      formData.country || "",
-                      formData.state || ""
-                    ).map((city) => (
-                      <SelectItem key={city} value={city}>
-                        {city}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                  onChange={(e) => handleInputChange("city", e.target.value)}
+                  placeholder={t("form.enterCity")}
+                  className={`mt-2 ${errors.city ? "border-red-500" : ""}`}
+                />
                 {errors.city && (
                   <p className="mt-1 text-sm text-red-600">{errors.city}</p>
                 )}
@@ -976,92 +986,57 @@ export default function Contacts() {
             {/* Location Selection */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
-                <Label htmlFor="edit-country">
+                <Label className="text-sm font-medium text-gray-700">
                   {t("sender.country")} <span className="text-red-500">*</span>
                 </Label>
-                <Select
-                  value={formData.country || "سوريا"}
-                  onValueChange={(value) =>
+                <GlobalCountrySelector
+                  value={formData.country || ""}
+                  onChange={(country) =>
                     setFormData((prev) => ({
                       ...prev,
-                      country: value,
+                      country: country.code,
                       state: "",
                       city: "",
                     }))
                   }
-                >
-                  <SelectTrigger
-                    className={`mt-2 ${errors.country ? "border-red-500" : ""}`}
-                  >
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {countries.map((country) => (
-                      <SelectItem key={country.code} value={country.name}>
-                        {country.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                  className={`mt-2 ${errors.country ? "border-red-500" : ""}`}
+                />
                 {errors.country && (
                   <p className="mt-1 text-sm text-red-600">{errors.country}</p>
                 )}
               </div>
+
               <div>
-                <Label htmlFor="edit-state">
+                <Label className="text-sm font-medium text-gray-700">
                   {t("sender.state")} <span className="text-red-500">*</span>
                 </Label>
-                <Select
+                <SearchableStateSelector
+                  countryCode={formData.country || ""}
                   value={formData.state || ""}
-                  onValueChange={(value) =>
-                    setFormData((prev) => ({ ...prev, state: value, city: "" }))
+                  onChange={(province) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      state: province.code,
+                      city: "",
+                    }))
                   }
-                  disabled={!formData.country}
-                >
-                  <SelectTrigger
-                    className={`mt-2 ${errors.state ? "border-red-500" : ""}`}
-                  >
-                    <SelectValue placeholder={t("common.selectState")} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {getStatesForCountry(formData.country || "").map(
-                      (state) => (
-                        <SelectItem key={state} value={state}>
-                          {state}
-                        </SelectItem>
-                      )
-                    )}
-                  </SelectContent>
-                </Select>
+                  className={`mt-2 ${errors.state ? "border-red-500" : ""}`}
+                />
                 {errors.state && (
                   <p className="mt-1 text-sm text-red-600">{errors.state}</p>
                 )}
               </div>
+
               <div>
-                <Label htmlFor="edit-city">
+                <Label className="text-sm font-medium text-gray-700">
                   {t("sender.city")} <span className="text-red-500">*</span>
                 </Label>
-                <Select
+                <Input
                   value={formData.city || ""}
-                  onValueChange={(value) => handleInputChange("city", value)}
-                  disabled={!formData.state}
-                >
-                  <SelectTrigger
-                    className={`mt-2 ${errors.city ? "border-red-500" : ""}`}
-                  >
-                    <SelectValue placeholder={t("common.selectCity")} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {getCitiesForState(
-                      formData.country || "",
-                      formData.state || ""
-                    ).map((city) => (
-                      <SelectItem key={city} value={city}>
-                        {city}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                  onChange={(e) => handleInputChange("city", e.target.value)}
+                  placeholder={t("form.enterCity")}
+                  className={`mt-2 ${errors.city ? "border-red-500" : ""}`}
+                />
                 {errors.city && (
                   <p className="mt-1 text-sm text-red-600">{errors.city}</p>
                 )}

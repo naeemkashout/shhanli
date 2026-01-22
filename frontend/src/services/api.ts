@@ -5,7 +5,7 @@ import axios, {
 } from "axios";
 
 const API_BASE_URL =
-  import.meta.env.VITE_API_URL || "http://localhost:5000/api";
+  import.meta.env.VITE_API_URL || "http://localhost:5001/api";
 
 // Create axios instance
 const api: AxiosInstance = axios.create({
@@ -27,7 +27,7 @@ api.interceptors.request.use(
   },
   (error: AxiosError) => {
     return Promise.reject(error);
-  }
+  },
 );
 
 // Response interceptor - Handle errors and token refresh
@@ -69,18 +69,33 @@ api.interceptors.response.use(
     }
 
     return Promise.reject(error);
-  }
+  },
 );
 
 export default api;
 
 // Helper function to handle API errors
 export const handleApiError = (error: any): string => {
+  const language = (localStorage.getItem("language") as "ar" | "en") || "ar";
+
+  const translations = {
+    ar: {
+      serverError: "خطأ في الخادم",
+      noResponse: "لا يوجد رد من الخادم. يرجى التحقق من الاتصال.",
+      unexpectedError: "حدث خطأ غير متوقع",
+    },
+    en: {
+      serverError: "Server error",
+      noResponse: "No response from server. Please check your connection.",
+      unexpectedError: "An unexpected error occurred",
+    },
+  };
+
   if (error.response) {
-    return error.response.data?.message || "An error occurred";
+    return error.response.data?.message || translations[language].serverError;
   } else if (error.request) {
-    return "No response from server. Please check your connection.";
+    return translations[language].noResponse;
   } else {
-    return error.message || "An unexpected error occurred";
+    return error.message || translations[language].unexpectedError;
   }
 };

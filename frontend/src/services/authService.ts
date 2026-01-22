@@ -20,6 +20,15 @@ export interface ChangePasswordData {
   newPassword: string;
 }
 
+export interface ForgotPasswordData {
+  email: string;
+}
+
+export interface ResetPasswordData {
+  token: string;
+  newPassword: string;
+}
+
 export interface AuthResponse {
   success: boolean;
   message: string;
@@ -40,11 +49,11 @@ class AuthService {
         localStorage.setItem("kashout_token", response.data.data.token);
         localStorage.setItem(
           "kashout_refresh_token",
-          response.data.data.refreshToken
+          response.data.data.refreshToken,
         );
         localStorage.setItem(
           "kashout_user",
-          JSON.stringify(response.data.data.user)
+          JSON.stringify(response.data.data.user),
         );
       }
 
@@ -63,11 +72,11 @@ class AuthService {
         localStorage.setItem("kashout_token", response.data.data.token);
         localStorage.setItem(
           "kashout_refresh_token",
-          response.data.data.refreshToken
+          response.data.data.refreshToken,
         );
         localStorage.setItem(
           "kashout_user",
-          JSON.stringify(response.data.data.user)
+          JSON.stringify(response.data.data.user),
         );
       }
 
@@ -109,11 +118,29 @@ class AuthService {
   }
 
   async refreshToken(
-    refreshToken: string
+    refreshToken: string,
   ): Promise<{ token: string; refreshToken: string }> {
     try {
       const response = await api.post("/auth/refresh", { refreshToken });
       return response.data.data;
+    } catch (error) {
+      throw new Error(handleApiError(error));
+    }
+  }
+
+  async forgotPassword(data: ForgotPasswordData): Promise<any> {
+    try {
+      const response = await api.post("/auth/forgot-password", data);
+      return response.data;
+    } catch (error) {
+      throw new Error(handleApiError(error));
+    }
+  }
+
+  async resetPassword(data: ResetPasswordData): Promise<any> {
+    try {
+      const response = await api.post("/auth/reset-password", data);
+      return response.data;
     } catch (error) {
       throw new Error(handleApiError(error));
     }

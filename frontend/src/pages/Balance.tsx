@@ -64,8 +64,8 @@ interface Transaction {
 
 export default function Balance() {
   const { t, isRTL } = useLanguage();
-  const [balanceSYP] = useState(1250000); // Syrian Pound balance
-  const [balanceUSD] = useState(2500.75); // US Dollar balance
+  const [balanceSYP, setBalanceSYP] = useState(0); // Syrian Pound balance
+  const [balanceUSD, setBalanceUSD] = useState(0); // US Dollar balance
   const [depositAmount, setDepositAmount] = useState("");
   const [withdrawAmount, setWithdrawAmount] = useState("");
   const [depositMethod, setDepositMethod] = useState("");
@@ -87,71 +87,27 @@ export default function Balance() {
   const [filterStatus, setFilterStatus] = useState<TransactionStatus>("all");
   const [showBalanceUsd, setShowBalanceUsd] = React.useState(true);
   const [showBalanceSyp, setShowBalanceSyp] = React.useState(true);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const [transactions] = useState<Transaction[]>([
-    {
-      id: "1",
-      type: "deposit",
-      amount: 500000,
-      currency: "SYP",
-      status: "completed",
-      method: t("balance.bankTransfer"),
-      date: "2024-01-15",
-      reference: "DEP001234",
-    },
-    {
-      id: "2",
-      type: "withdrawal",
-      amount: 200,
-      currency: "USD",
-      status: "pending",
-      method: t("balance.bankTransfer"),
-      date: "2024-01-14",
-      reference: "WTH001235",
-      notes: t("urgentWithdrawalRequest"),
-    },
-    {
-      id: "3",
-      type: "deposit",
-      amount: 1000,
-      currency: "USD",
-      status: "completed",
-      method: t("creditCard"),
-      date: "2024-01-12",
-      reference: "DEP001236",
-    },
-    {
-      id: "4",
-      type: "withdrawal",
-      amount: 150000,
-      currency: "SYP",
-      status: "failed",
-      method: t("mobileWallet"),
-      date: "2024-01-10",
-      reference: "WTH001237",
-      notes: t("insufficientVerification"),
-    },
-    {
-      id: "5",
-      type: "deposit",
-      amount: 750000,
-      currency: "SYP",
-      status: "completed",
-      method: t("mobileWallet"),
-      date: "2024-01-08",
-      reference: "DEP001238",
-    },
-    {
-      id: "6",
-      type: "withdrawal",
-      amount: 500,
-      currency: "USD",
-      status: "completed",
-      method: t("balance.bankTransfer"),
-      date: "2024-01-05",
-      reference: "WTH001239",
-    },
-  ]);
+  // Load balance and transactions data
+  React.useEffect(() => {
+    const loadBalanceData = async () => {
+      try {
+        // TODO: Implement API calls to get real balance and transactions
+        // For now, show empty state
+        setBalanceSYP(0);
+        setBalanceUSD(0);
+        setTransactions([]);
+      } catch (error) {
+        console.error("Error loading balance data:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadBalanceData();
+  }, []);
 
   const depositMethods = [
     { value: "credit_card", label: t("creditCard"), icon: CreditCard },
@@ -259,8 +215,8 @@ export default function Balance() {
       toast.error(
         `${t("minimumDepositAmount")}: ${formatCurrency(
           minAmount,
-          depositCurrency
-        )}`
+          depositCurrency,
+        )}`,
       );
       return;
     }
@@ -268,8 +224,8 @@ export default function Balance() {
       toast.error(
         `${t("maximumDepositAmount")}: ${formatCurrency(
           maxAmount,
-          depositCurrency
-        )}`
+          depositCurrency,
+        )}`,
       );
       return;
     }
@@ -298,8 +254,8 @@ export default function Balance() {
       toast.error(
         `${t("minimumWithdrawAmount")}: ${formatCurrency(
           minAmount,
-          withdrawCurrency
-        )}`
+          withdrawCurrency,
+        )}`,
       );
       return;
     }
@@ -491,12 +447,12 @@ export default function Balance() {
                   {t("minimum")}:{" "}
                   {formatCurrency(
                     getMinDepositAmount(depositCurrency),
-                    depositCurrency
+                    depositCurrency,
                   )}{" "}
                   | {t("maximum")}:{" "}
                   {formatCurrency(
                     getMaxDepositAmount(depositCurrency),
-                    depositCurrency
+                    depositCurrency,
                   )}
                 </p>
               </div>
@@ -597,12 +553,12 @@ export default function Balance() {
                   {t("minimum")}:{" "}
                   {formatCurrency(
                     getMinWithdrawAmount(withdrawCurrency),
-                    withdrawCurrency
+                    withdrawCurrency,
                   )}{" "}
                   | {t("availableBalance")}:{" "}
                   {formatCurrency(
                     getCurrentBalance(withdrawCurrency),
-                    withdrawCurrency
+                    withdrawCurrency,
                   )}
                 </p>
               </div>
@@ -826,7 +782,7 @@ export default function Balance() {
                         {transaction.type === "deposit" ? "+" : "-"}
                         {formatCurrency(
                           transaction.amount,
-                          transaction.currency
+                          transaction.currency,
                         )}
                       </div>
                       <div className="text-xs text-muted-foreground">
@@ -901,7 +857,7 @@ export default function Balance() {
                     {selectedTransaction.type === "deposit" ? "+" : "-"}
                     {formatCurrency(
                       selectedTransaction.amount,
-                      selectedTransaction.currency
+                      selectedTransaction.currency,
                     )}
                   </div>
                   <div className="text-xs text-muted-foreground mt-1">

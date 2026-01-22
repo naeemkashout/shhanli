@@ -28,10 +28,18 @@ const createIndexes = async () => {
     const Shipment = mongoose.model("Shipment");
     await Shipment.collection.createIndex(
       { trackingNumber: 1 },
-      { unique: true }
+      { unique: true },
     );
     await Shipment.collection.createIndex({ userId: 1 });
     await Shipment.collection.createIndex({ status: 1 });
+
+    // Contact indexes
+    const Contact = mongoose.model("Contact");
+    await Contact.collection.createIndex(
+      { userId: 1, phone: 1 },
+      { unique: true },
+    );
+    await Contact.collection.createIndex({ userId: 1 });
 
     console.log("✅ Database indexes created");
   } catch (error) {

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
   Card,
@@ -10,6 +10,11 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Eye, EyeOff, ArrowLeft, Upload, X } from "lucide-react";
+import { useLanguage } from "@/contexts/LanguageContext";
+import { useAuth } from "@/contexts/AuthContext";
+import { toast } from "sonner";
 import {
   Select,
   SelectContent,
@@ -17,14 +22,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Eye, EyeOff, ArrowLeft, Upload, X } from "lucide-react";
-import { useLanguage } from "@/contexts/LanguageContext";
-import { toast } from "sonner";
+import { GlobalCountrySelector } from "@/components/GlobalCountrySelector";
+import { SearchableStateSelector } from "@/components/SearchableStateSelector";
+import { GlobalCountry, GlobalState } from "@/data/globalLocations";
 
 export default function SignUp() {
   const { t, isRTL, language } = useLanguage();
   const navigate = useNavigate();
+  const { register } = useAuth();
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -47,8 +52,48 @@ export default function SignUp() {
     street: "",
   });
 
+  // Reset form data when component mounts (when navigating to signup page)
+  useEffect(() => {
+    setFormData({
+      firstName: "",
+      lastName: "",
+      email: "",
+      phone: "",
+      password: "",
+      confirmPassword: "",
+      accountType: "",
+      companyName: "",
+      commercialRegister: "",
+      country: "",
+      province: "",
+      city: "",
+      street: "",
+    });
+    setAgreedToTerms(false);
+    setUploadedFiles([]);
+    setShowPassword(false);
+    setShowConfirmPassword(false);
+  }, []);
+
   const handleInputChange = (field: string, value: string) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const handleCountryChange = (country: GlobalCountry) => {
+    setFormData((prev) => ({
+      ...prev,
+      country: country.code,
+      province: "", // Reset province when country changes
+      city: "", // Reset city when country changes
+    }));
+  };
+
+  const handleProvinceChange = (province: GlobalState) => {
+    setFormData((prev) => ({
+      ...prev,
+      province: province.code,
+      city: "", // Reset city when province changes
+    }));
   };
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -67,7 +112,7 @@ export default function SignUp() {
 
     if (validFiles.length !== files.length) {
       toast.error(
-        "Some files were rejected. Please ensure files are PDF, JPG, PNG, DOC, or DOCX and under 5MB."
+        "Some files were rejected. Please ensure files are PDF, JPG, PNG, DOC, or DOCX and under 5MB.",
       );
     }
 
@@ -137,64 +182,30 @@ export default function SignUp() {
     setIsLoading(true);
 
     try {
-      // Simulate API call
+      // Combine address fields into a full address
+      const fullAddress =
+        `${formData.street}, ${formData.city}, ${formData.province}, ${formData.country}`.trim();
 
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-      toast.success(t("auth.loginSuccess"));
+      const registerData = {
+        name: `${formData.firstName} ${formData.lastName}`,
+        email: formData.email,
+        phone: formData.phone,
+        password: formData.password,
+        businessType: formData.accountType,
+        companyName: formData.companyName,
+        commercialRegister: formData.commercialRegister,
+        address: fullAddress,
+      };
+
+      await register(registerData);
+      toast.success(t("auth.registrationSuccess"));
       navigate("/signin");
-      // Redirect logic would go here
-    } catch (error) {
-      toast.error(t("auth.loginError"));
+    } catch (error: any) {
+      console.error("Registration error:", error);
+      toast.error(error.message || t("auth.registrationError"));
     } finally {
       setIsLoading(false);
     }
-  };
-
-  const countries = [
-    { code: "sy", name: language === "ar" ? "سوريا" : "Syria" },
-    { code: "lb", name: language === "ar" ? "لبنان" : "Lebanon" },
-    { code: "jo", name: language === "ar" ? "الأردن" : "Jordan" },
-  ];
-  const cityies = {
-    دمشق: language === "ar" ? ["test1"] : ["test2"],
-    Damascus: language === "ar" ? ["test1"] : ["test2"],
-  };
-
-  const provinces = {
-    sy:
-      language === "ar"
-        ? [
-            "دمشق",
-            "حلب",
-            "حمص",
-            "حماة",
-            "اللاذقية",
-            "طرطوس",
-            "درعا",
-            "السويداء",
-            "القنيطرة",
-            "دير الزور",
-            "الرقة",
-            "الحسكة",
-            "إدلب",
-            "ريف دمشق",
-          ]
-        : [
-            "Damascus",
-            "Aleppo",
-            "Homs",
-            "Hama",
-            "Latakia",
-            "Tartus",
-            "Daraa",
-            "As-Suwayda",
-            "Quneitra",
-            "Deir ez-Zor",
-            "Raqqa",
-            "Al-Hasakah",
-            "Idlib",
-            "Rif Dimashq",
-          ],
   };
 
   return (
@@ -460,7 +471,7 @@ export default function SignUp() {
                         onChange={(e) =>
                           handleInputChange(
                             "commercialRegister",
-                            e.target.value
+                            e.target.value,
                           )
                         }
                         className="h-11 sm:h-12 text-base bg-white"
@@ -535,23 +546,11 @@ export default function SignUp() {
                       {t("auth.country")}{" "}
                       <span className="text-red-500">*</span>
                     </Label>
-                    <Select
+                    <GlobalCountrySelector
                       value={formData.country}
-                      onValueChange={(value) =>
-                        handleInputChange("country", value)
-                      }
-                    >
-                      <SelectTrigger className="h-11 sm:h-12 text-base">
-                        <SelectValue placeholder={t("form.selectCountry")} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {countries.map((country) => (
-                          <SelectItem key={country.code} value={country.code}>
-                            {country.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                      onChange={handleCountryChange}
+                      className="h-11 sm:h-12"
+                    />
                   </div>
 
                   <div className="space-y-2">
@@ -559,27 +558,12 @@ export default function SignUp() {
                       {t("auth.province")}{" "}
                       <span className="text-red-500">*</span>
                     </Label>
-                    <Select
+                    <SearchableStateSelector
+                      countryCode={formData.country}
                       value={formData.province}
-                      onValueChange={(value) =>
-                        handleInputChange("province", value)
-                      }
-                      disabled={!formData.country}
-                    >
-                      <SelectTrigger className="h-11 sm:h-12 text-base">
-                        <SelectValue placeholder={t("form.selectProvince")} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {formData.country &&
-                          provinces[
-                            formData.country as keyof typeof provinces
-                          ]?.map((province) => (
-                            <SelectItem key={province} value={province}>
-                              {province}
-                            </SelectItem>
-                          ))}
-                      </SelectContent>
-                    </Select>
+                      onChange={handleProvinceChange}
+                      className="h-11 sm:h-12"
+                    />
                   </div>
                 </div>
 
@@ -591,27 +575,16 @@ export default function SignUp() {
                     >
                       {t("auth.city")} <span className="text-red-500">*</span>
                     </Label>
-                    <Select
+                    <Input
+                      id="city"
+                      type="text"
+                      placeholder={t("form.enterCity")}
                       value={formData.city}
-                      onValueChange={(value) =>
-                        handleInputChange("city", value)
+                      onChange={(e) =>
+                        handleInputChange("city", e.target.value)
                       }
-                      disabled={!formData.province}
-                    >
-                      <SelectTrigger className="h-11 sm:h-12 text-base">
-                        <SelectValue placeholder={t("form.selectCity")} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {formData.province &&
-                          cityies[
-                            formData.province as keyof typeof cityies
-                          ]?.map((city) => (
-                            <SelectItem key={city} value={city}>
-                              {city}
-                            </SelectItem>
-                          ))}
-                      </SelectContent>
-                    </Select>
+                      className="h-11 sm:h-12 text-base"
+                    />
                   </div>
                   <div className="space-y-2">
                     <Label

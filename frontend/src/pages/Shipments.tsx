@@ -86,147 +86,31 @@ interface Shipment {
 export default function Shipments() {
   const { t, isRTL, language } = useLanguage();
 
-  // Dynamic mock shipments based on language
-  const getMockShipments = (): Shipment[] => [
-    {
-      id: "1",
-      trackingNumber: "SH001234567",
-      sender: {
-        senderName: language === "ar" ? "أحمد محمد" : "Ahmed Mohammed",
-        senderCountry: "Syria",
-        senderState: "Aleppo",
-        senderEmail: "naeem@gmail.com",
-        senderPhone: "+963991234567",
-        senderType: "individual",
-        senderStreet:
-          language === "ar"
-            ? "شارع الملك فيصل، حي السلامانية"
-            : "King Faisal Street, Salamaniya District",
-        senderCity: language === "ar" ? "حلب" : "Aleppo",
-      },
-      receiver: {
-        receiverName: language === "ar" ? "فاطمة علي" : "Fatima Ali",
-        receiverPhone: "+963987654321",
-        receiverCountry: "UAE",
-        receiverState: "Dubai",
-        receiverEmail: "user@gmail.com",
+  const [shipments, setShipments] = useState<Shipment[]>([]);
+  const [loading, setLoading] = useState(true);
 
-        receiverStreet:
-          language === "ar"
-            ? "شارع النور، حي الحرة"
-            : "Al-Nour Street, Al-Harra District",
-        receiverCity: language === "ar" ? "دمشق" : "Damascus",
-      },
-      package: {
-        type: "electronics",
-        weight: 2.5,
-        description:
-          language === "ar" ? "جهاز كمبيوتر محمول" : "Laptop computer",
-        value: 800,
-        currency: "USD",
-      },
-      status: "delivered",
-      company: language === "ar" ? "أرامكس" : "Aramex",
-      cost: 12500,
-      createdAt: "2024-01-15",
-      estimatedDelivery: "2024-01-17",
-      paymentMethod: "wallet",
-    },
-    {
-      id: "2",
-      trackingNumber: "SH001234568",
-      sender: {
-        senderName: language === "ar" ? "Naeem" : "Naeem",
-        senderCountry: "Syria",
-        senderState: "daraa",
-        senderEmail: "naeem@gmail.com",
-        senderPhone: "+963991234567",
-        senderType: "individual",
-        senderStreet:
-          language === "ar"
-            ? "شارع الملك فيصل، حي السلامانية"
-            : "King Faisal Street, Salamaniya District",
-        senderCity: language === "ar" ? "حلب" : "Daraa",
-      },
-      receiver: {
-        receiverName: language === "ar" ? "فاطمة علي" : "Fatima Ali",
-        receiverPhone: "+963987654321",
-        receiverCountry: "UAE",
-        receiverState: "Dubai",
-        receiverEmail: "user@gmail.com",
+  // Load shipments from API
+  React.useEffect(() => {
+    const loadShipments = async () => {
+      try {
+        // TODO: Implement API call to get user's shipments
+        // For now, show empty state
+        setShipments([]);
+      } catch (error) {
+        console.error("Error loading shipments:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
 
-        receiverStreet:
-          language === "ar"
-            ? "شارع النور، حي الحرة"
-            : "Al-Nour Street, Al-Harra District",
-        receiverCity: language === "ar" ? "دمشق" : "Damascus",
-      },
-      package: {
-        type: "documents",
-        weight: 0.5,
-        description: language === "ar" ? "وثائق مهمة" : "Important documents",
-        value: 50,
-        currency: "USD",
-      },
-      status: "in-transit",
-      company: "DHL",
-      cost: 4000,
-      createdAt: "2024-01-14",
-      estimatedDelivery: "2024-01-16",
-      paymentMethod: "shamCash",
-    },
-    {
-      id: "3",
-      trackingNumber: "SH001234569",
-      sender: {
-        senderName: language === "ar" ? "أحمد محمد" : "Ahmed Mohammed",
-        senderCountry: "Syria",
-        senderState: "Aleppo",
-        senderEmail: "naeem@gmail.com",
-        senderPhone: "+963991234567",
-        senderType: "individual",
-        senderStreet:
-          language === "ar"
-            ? "شارع الملك فيصل، حي السلامانية"
-            : "King Faisal Street, Salamaniya District",
-        senderCity: language === "ar" ? "حلب" : "Aleppo",
-      },
-      receiver: {
-        receiverName: language === "ar" ? "فاطمة علي" : "Fatima Ali",
-        receiverPhone: "+963987654321",
-        receiverCountry: "UAE",
-        receiverState: "Dubai",
-        receiverEmail: "user@gmail.com",
-
-        receiverStreet:
-          language === "ar"
-            ? "شارع النور، حي الحرة"
-            : "Al-Nour Street, Al-Harra District",
-        receiverCity: language === "ar" ? "دمشق" : "Damascus",
-      },
-      package: {
-        type: "clothing",
-        weight: 1.2,
-        description: language === "ar" ? "ملابس شتوية" : "Winter clothes",
-        value: 200,
-        currency: "USD",
-      },
-      status: "pending",
-      company: language === "ar" ? "سوريا إكسبريس" : "Syria Express",
-      cost: 3600,
-      createdAt: "2024-01-13",
-      estimatedDelivery: "2024-01-15",
-      paymentMethod: "cod",
-    },
-  ];
-
-  const [shipments, setShipments] = useState<Shipment[]>(getMockShipments());
+    loadShipments();
+  }, []);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [dateFrom, setDateFrom] = useState<string>("");
   const [dateTo, setDateTo] = useState<string>("");
   const [selectedShipment, setSelectedShipment] = useState<Shipment | null>(
-    null
+    null,
   );
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
   const [isPrintDialogOpen, setIsPrintDialogOpen] = useState(false);
@@ -280,7 +164,7 @@ export default function Shipments() {
     } else {
       // Generic tracking URL for other companies
       return `https://www.google.com/search?q=track+${encodeURIComponent(
-        company
+        company,
       )}+${trackingNumber}`;
     }
   };
@@ -288,13 +172,13 @@ export default function Shipments() {
   const handleTrackShipment = (shipment: Shipment) => {
     const trackingUrl = getTrackingUrl(
       shipment.company,
-      shipment.trackingNumber
+      shipment.trackingNumber,
     );
     window.open(trackingUrl, "_blank");
     toast.success(
       language === "ar"
         ? `تم فتح صفحة تتبع الشحنة ${shipment.trackingNumber}`
-        : `Tracking page opened for shipment ${shipment.trackingNumber}`
+        : `Tracking page opened for shipment ${shipment.trackingNumber}`,
     );
   };
 
@@ -357,14 +241,14 @@ export default function Shipments() {
       prev.map((shipment) =>
         shipment.id === selectedShipment.id
           ? { ...shipment, status: "cancelled" as const }
-          : shipment
-      )
+          : shipment,
+      ),
     );
 
     toast.success(
       t("shipments.cancelRequestSent", {
         trackingNumber: selectedShipment.trackingNumber,
-      })
+      }),
     );
     setIsCancelDialogOpen(false);
     setSelectedShipment(null);
@@ -389,7 +273,7 @@ export default function Shipments() {
     doc.text(
       `${t("shipments.trackingNumber")}: ${shipment.trackingNumber}`,
       14,
-      30
+      30,
     );
 
     // Sender Information
@@ -403,7 +287,7 @@ export default function Shipments() {
         shipment.sender.senderCity
       }, ${shipment.sender.senderState}, ${shipment.sender.senderCountry}`,
       14,
-      65
+      65,
     );
 
     // Receiver Information
@@ -413,12 +297,12 @@ export default function Shipments() {
     doc.text(
       `${t("receiver.name")}: ${shipment.receiver.receiverName}`,
       14,
-      90
+      90,
     );
     doc.text(
       `${t("receiver.phone")}: ${shipment.receiver.receiverPhone}`,
       14,
-      95
+      95,
     );
     doc.text(
       `${t("receiver.address")}: ${shipment.receiver.receiverStreet}, ${
@@ -427,7 +311,7 @@ export default function Shipments() {
         shipment.receiver.receiverCountry
       }`,
       14,
-      100
+      100,
     );
 
     // Package Details
@@ -437,7 +321,7 @@ export default function Shipments() {
     doc.text(
       `${t("package.type")}: ${t(`package.${shipment.package.type}`)}`,
       14,
-      125
+      125,
     );
     doc.text(`${t("package.weight")}: ${shipment.package.weight} kg`, 14, 130);
     doc.text(
@@ -445,12 +329,12 @@ export default function Shipments() {
         shipment.package.currency
       }`,
       14,
-      135
+      135,
     );
     doc.text(
       `${t("package.description")}: ${shipment.package.description}`,
       14,
-      140
+      140,
     );
 
     // Shipping Information
@@ -461,25 +345,25 @@ export default function Shipments() {
     doc.text(
       `${t("shipment.totalCost")}: ${shipment.cost.toLocaleString()} SYP`,
       14,
-      170
+      170,
     );
     doc.text(
       `${t("shipment.paymentMethod")}: ${t(
-        `shipment.${shipment.paymentMethod}`
+        `shipment.${shipment.paymentMethod}`,
       )}`,
       14,
-      175
+      175,
     );
     doc.text(`${t("shipments.createdDate")}: ${shipment.createdAt}`, 14, 180);
     doc.text(
       `${t("shipments.estimatedDelivery")}: ${shipment.estimatedDelivery}`,
       14,
-      185
+      185,
     );
     doc.text(
       `${t("status.title")}: ${t(`status.${shipment.status}`)}`,
       14,
-      190
+      190,
     );
 
     // Footer
@@ -488,7 +372,7 @@ export default function Shipments() {
       `Generated by Shply - ${new Date().toLocaleDateString()}`,
       105,
       280,
-      { align: "center" }
+      { align: "center" },
     );
 
     // Save PDF
@@ -503,14 +387,14 @@ export default function Shipments() {
       toast.success(
         language === "ar"
           ? `تم تحميل البوليصة ${selectedShipment.trackingNumber} كملف PDF`
-          : `Shipment bill ${selectedShipment.trackingNumber} downloaded as PDF`
+          : `Shipment bill ${selectedShipment.trackingNumber} downloaded as PDF`,
       );
     } catch (error) {
       console.error("Error generating PDF:", error);
       toast.error(
         language === "ar"
           ? "حدث خطأ أثناء تحميل ملف PDF"
-          : "Error generating PDF file"
+          : "Error generating PDF file",
       );
     }
     setIsPrintDialogOpen(false);
@@ -523,8 +407,8 @@ export default function Shipments() {
       <head>
         <meta charset="UTF-8">
         <title>${t("shipments.shippingBill")} - ${
-      shipment.trackingNumber
-    }</title>
+          shipment.trackingNumber
+        }</title>
         <style>
           body { font-family: Arial, sans-serif; margin: 20px; direction: ${
             isRTL ? "rtl" : "ltr"
@@ -547,120 +431,120 @@ export default function Shipments() {
         
         <div class="section">
           <div class="section-title">${t("sender.title")} - ${
-      language === "ar" ? "Sender Information" : "معلومات المرسل"
-    }</div>
+            language === "ar" ? "Sender Information" : "معلومات المرسل"
+          }</div>
           <div class="info-row">
             <span class="info-label">${t("sender.name")} - ${
-      language === "ar" ? "Name" : "الاسم"
-    }:</span>
+              language === "ar" ? "Name" : "الاسم"
+            }:</span>
             <span>${shipment.sender.senderName}</span>
           </div>
           <div class="info-row">
             <span class="info-label">${t("sender.phone")} - ${
-      language === "ar" ? "Phone" : "الهاتف"
-    }:</span>
+              language === "ar" ? "Phone" : "الهاتف"
+            }:</span>
             <span>${shipment.sender.senderPhone}</span>
           </div>
           <div class="info-row">
             <span class="info-label">${t("sender.address")} - ${
-      language === "ar" ? "Address" : "العنوان"
-    }:</span>
+              language === "ar" ? "Address" : "العنوان"
+            }:</span>
             <span>${shipment.sender.senderCountry},${
-      shipment.sender.senderState
-    },${shipment.sender.senderCity}, ${shipment.sender.senderStreet}</span>
+              shipment.sender.senderState
+            },${shipment.sender.senderCity}, ${shipment.sender.senderStreet}</span>
           </div>
         </div>
         
         <div class="section">
           <div class="section-title">${t("receiver.title")} - ${
-      language === "ar" ? "Receiver Information" : "معلومات المستقبل"
-    }</div>
+            language === "ar" ? "Receiver Information" : "معلومات المستقبل"
+          }</div>
           <div class="info-row">
             <span class="info-label">${t("sender.name")} - ${
-      language === "ar" ? "Name" : "الاسم"
-    }:</span>
+              language === "ar" ? "Name" : "الاسم"
+            }:</span>
             <span>${shipment.receiver.receiverName}</span>
           </div>
           <div class="info-row">
             <span class="info-label">${t("sender.phone")} - ${
-      language === "ar" ? "Phone" : "الهاتف"
-    }:</span>
+              language === "ar" ? "Phone" : "الهاتف"
+            }:</span>
             <span>${shipment.receiver.receiverPhone}</span>
           </div>
           <div class="info-row">
             <span class="info-label">${t("sender.address")} - ${
-      language === "ar" ? "Address" : "العنوان"
-    }:</span>
+              language === "ar" ? "Address" : "العنوان"
+            }:</span>
             <span>${shipment.receiver.receiverCountry}, ${
-      shipment.receiver.receiverState
-    }, ${shipment.receiver.receiverCity}, ${
-      shipment.receiver.receiverStreet
-    }</span>
+              shipment.receiver.receiverState
+            }, ${shipment.receiver.receiverCity}, ${
+              shipment.receiver.receiverStreet
+            }</span>
           </div>
         </div>
         
         <div class="section">
           <div class="section-title">${t("package.title")} - ${
-      language === "ar" ? "Package Details" : "تفاصيل الطرد"
-    }</div>
+            language === "ar" ? "Package Details" : "تفاصيل الطرد"
+          }</div>
           <div class="info-row">
             <span class="info-label">${t("package.type")} - ${
-      language === "ar" ? "Type" : "النوع"
-    }:</span>
+              language === "ar" ? "Type" : "النوع"
+            }:</span>
             <span>${t(`package.${shipment.package.type}`)}</span>
           </div>
           <div class="info-row">
             <span class="info-label">${t("package.weight")} - ${
-      language === "ar" ? "Weight" : "الوزن"
-    }:</span>
+              language === "ar" ? "Weight" : "الوزن"
+            }:</span>
             <span>${shipment.package.weight} kg</span>
           </div>
           <div class="info-row">
             <span class="info-label">${t("package.description")} - ${
-      language === "ar" ? "Description" : "الوصف"
-    }:</span>
+              language === "ar" ? "Description" : "الوصف"
+            }:</span>
             <span>${shipment.package.description}</span>
           </div>
           <div class="info-row">
             <span class="info-label">${t("package.value")} - ${
-      language === "ar" ? "Value" : "القيمة"
-    }:</span>
+              language === "ar" ? "Value" : "القيمة"
+            }:</span>
             <span>${shipment.package.value} ${shipment.package.currency}</span>
           </div>
         </div>
         
         <div class="section">
           <div class="section-title">${t("shipment.shippingInfo")} - ${
-      language === "ar" ? "Shipping Information" : "معلومات الشحن"
-    }</div>
+            language === "ar" ? "Shipping Information" : "معلومات الشحن"
+          }</div>
           <div class="info-row">
             <span class="info-label">${t("shipment.shippingCompany")} - ${
-      language === "ar" ? "Company" : "شركة الشحن"
-    }:</span>
+              language === "ar" ? "Company" : "شركة الشحن"
+            }:</span>
             <span>${shipment.company}</span>
           </div>
           <div class="info-row">
             <span class="info-label">${t("shipment.totalCost")} - ${
-      language === "ar" ? "Cost" : "التكلفة"
-    }:</span>
+              language === "ar" ? "Cost" : "التكلفة"
+            }:</span>
             <span>${shipment.cost.toLocaleString()} SYP</span>
           </div>
           <div class="info-row">
             <span class="info-label">${t("shipment.paymentMethod")} - ${
-      language === "ar" ? "Payment" : "طريقة الدفع"
-    }:</span>
+              language === "ar" ? "Payment" : "طريقة الدفع"
+            }:</span>
             <span>${t(`shipment.${shipment.paymentMethod}`)}</span>
           </div>
           <div class="info-row">
             <span class="info-label">${t("shipments.createdDate")} - ${
-      language === "ar" ? "Created" : "تاريخ الإنشاء"
-    }:</span>
+              language === "ar" ? "Created" : "تاريخ الإنشاء"
+            }:</span>
             <span>${shipment.createdAt}</span>
           </div>
           <div class="info-row">
             <span class="info-label">${t("shipments.estimatedDelivery")} - ${
-      language === "ar" ? "Estimated Delivery" : "التسليم المتوقع"
-    }:</span>
+              language === "ar" ? "Estimated Delivery" : "التسليم المتوقع"
+            }:</span>
             <span>${shipment.estimatedDelivery}</span>
           </div>
         </div>
@@ -795,7 +679,7 @@ export default function Shipments() {
                       </h3>
                       <Badge
                         className={`${getStatusColor(
-                          shipment.status
+                          shipment.status,
                         )} text-xs mt-1`}
                       >
                         <div className="flex items-center gap-1">
@@ -1006,7 +890,7 @@ export default function Shipments() {
               <div className="flex items-center justify-center">
                 <Badge
                   className={`${getStatusColor(
-                    selectedShipment.status
+                    selectedShipment.status,
                   )} text-base px-4 py-2`}
                 >
                   <div className="flex items-center gap-2">

@@ -6,7 +6,16 @@ const http = require("http");
 const socketIo = require("socket.io");
 
 // Load environment variables
-dotenv.config();
+dotenv.config({ path: "./.env" });
+
+console.log("🔍 Environment variables loaded:");
+console.log("MONGODB_URI:", process.env.MONGODB_URI ? "Set" : "Not set");
+console.log("JWT_SECRET:", process.env.JWT_SECRET ? "Set" : "Not set");
+console.log("EMAIL_USER:", process.env.EMAIL_USER ? "Set" : "Not set");
+console.log(
+  "EMAIL_APP_PASSWORD:",
+  process.env.EMAIL_APP_PASSWORD ? "Set" : "Not set",
+);
 
 // Create Express app
 const app = express();
@@ -34,7 +43,7 @@ app.use(
   cors({
     origin: process.env.CORS_ORIGIN || "http://localhost:5173",
     credentials: true,
-  })
+  }),
 );
 
 // Make io accessible to routes
@@ -58,6 +67,7 @@ io.on("connection", (socket) => {
 app.use("/api/auth", require("./routes/auth"));
 app.use("/api/users", require("./routes/users"));
 app.use("/api/shipments", require("./routes/shipments"));
+app.use("/api/contacts", require("./routes/contacts"));
 app.use("/api/wallet", require("./routes/wallet"));
 app.use("/api/admin", require("./routes/admin"));
 
