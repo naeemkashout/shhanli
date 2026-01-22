@@ -20,44 +20,43 @@ export default function Dashboard() {
   const { t, isRTL, language } = useLanguage();
 
   const [showBalance, setShowBalance] = React.useState(true);
-
-  // Mock data
-  const stats = {
-    totalShipments: 156,
-    pendingShipments: 23,
-    completedShipments: 133,
+  const [stats, setStats] = React.useState({
+    totalShipments: 0,
+    pendingShipments: 0,
+    completedShipments: 0,
     walletBalance: {
-      USD: 1250.75,
-      SYP: 2850000,
+      USD: 0,
+      SYP: 0,
     },
-  };
+  });
+  const [recentShipments, setRecentShipments] = React.useState([]);
+  const [loading, setLoading] = React.useState(true);
 
-  const recentShipments = [
-    {
-      id: "SH001",
-      from: "دمشق",
-      to: "حلب",
-      status: "delivered",
-      date: "2024-01-15",
-      cost: 25000,
-    },
-    {
-      id: "SH002",
-      from: "اللاذقية",
-      to: "دمشق",
-      status: "in-transit",
-      date: "2024-01-14",
-      cost: 30000,
-    },
-    {
-      id: "SH003",
-      from: "حمص",
-      to: "حماة",
-      status: "pending",
-      date: "2024-01-13",
-      cost: 15000,
-    },
-  ];
+  // Load dashboard data
+  React.useEffect(() => {
+    const loadDashboardData = async () => {
+      try {
+        // TODO: Implement API calls to get real data
+        // For now, show empty state
+        setStats({
+          totalShipments: 0,
+          pendingShipments: 0,
+          completedShipments: 0,
+          walletBalance: {
+            USD: 0,
+            SYP: 0,
+          },
+        });
+        setRecentShipments([]);
+      } catch (error) {
+        console.error("Error loading dashboard data:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadDashboardData();
+  }, []);
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -296,7 +295,7 @@ export default function Dashboard() {
                       <div className="text-right flex-shrink-0 ml-2">
                         <span
                           className={`inline-flex px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(
-                            shipment.status
+                            shipment.status,
                           )}`}
                         >
                           {t(`status.${shipment.status}`)}

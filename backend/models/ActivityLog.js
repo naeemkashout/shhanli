@@ -14,6 +14,8 @@ const activityLogSchema = new mongoose.Schema(
         "login",
         "logout",
         "register",
+        "password-reset-request",
+        "password-reset",
         "create-shipment",
         "update-shipment",
         "cancel-shipment",
@@ -51,7 +53,7 @@ const activityLogSchema = new mongoose.Schema(
   },
   {
     timestamps: true,
-  }
+  },
 );
 
 // Index for faster queries

@@ -10,32 +10,26 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Package, ArrowLeft, Globe, CheckCircle } from "lucide-react";
+import {
+  Package,
+  ArrowLeft,
+  Globe,
+  CheckCircle,
+  AlertCircle,
+} from "lucide-react";
 import { toast } from "sonner";
 import { useLanguage } from "@/contexts/LanguageContext";
+import { useAuth } from "@/contexts/AuthContext";
 import OperationStatus from "@/components/OperationStatus";
 import { useOperationStatus } from "@/hooks/useOperationStatus";
 
 export default function ForgotPassword() {
   const { language, setLanguage, t, isRTL } = useLanguage();
+  const { forgotPassword } = useAuth();
   const operationStatus = useOperationStatus();
 
   const [email, setEmail] = useState("");
   const [isEmailSent, setIsEmailSent] = useState(false);
-
-  const simulatePasswordReset = async (email: string) => {
-    // Simulate API call delay
-    await new Promise((resolve) => setTimeout(resolve, 2000));
-
-    // Simulate random success/failure (95% success rate)
-    if (Math.random() > 0.05) {
-      // Success
-      return;
-    } else {
-      // Failure
-      throw new Error(t("auth.resetPasswordError"));
-    }
-  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -46,7 +40,7 @@ export default function ForgotPassword() {
     }
 
     await operationStatus.executeOperation(async () => {
-      await simulatePasswordReset(email);
+      await forgotPassword({ email });
     });
   };
 

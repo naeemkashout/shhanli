@@ -67,6 +67,7 @@ const translations = {
     "auth.loginSuccess": "تم تسجيل الدخول بنجاح",
     "auth.loginError": "فشل في تسجيل الدخول",
     "auth.logoutSuccess": "تم تسجيل الخروج بنجاح",
+    "auth.registerSuccess": "تم إنشاء الحساب بنجاح",
 
     // Forgot Password - Enhanced Arabic translations
     "auth.resetPassword": "إعادة تعيين كلمة المرور",
@@ -601,7 +602,7 @@ const translations = {
     "common.close": "إغلاق",
     "common.selectCountry": "اختر البلد",
     "common.selectState": "اختر المحافظة",
-    "common.selectCity": "اختر المدينة",
+    "common.enterCity": "أدخل المدينة",
     "common.noResults": "لا توجد نتائج",
     "common.required": "*",
     "common.optional": "اختياري",
@@ -648,7 +649,7 @@ const translations = {
     "form.selectAccountType": "اختر نوع الحساب",
     "form.selectCountry": "اختر البلد",
     "form.selectProvince": "اختر المحافظة",
-    "form.selectCity": "اختر المدينة",
+    "form.enterCity": "أدخل المدينة",
     "form.enterStreet": "أدخل الشارع",
     "form.searchCountries": "البحث في البلدان...",
 
@@ -728,6 +729,7 @@ const translations = {
     "auth.loginSuccess": "Login successful",
     "auth.loginError": "Login failed",
     "auth.logoutSuccess": "Logout successful",
+    "auth.registerSuccess": "Registration successful",
 
     // Forgot Password - English translations
     "auth.resetPassword": "Reset Password",
@@ -1267,7 +1269,7 @@ const translations = {
     "common.close": "Close",
     "common.selectCountry": "Select Country",
     "common.selectState": "Select State",
-    "common.selectCity": "Select City",
+    "common.enterCity": "Enter City",
     "common.noResults": "No results found",
     "common.required": "*",
     "common.optional": "optional",
@@ -1315,7 +1317,7 @@ const translations = {
     "form.selectAccountType": "Select account type",
     "form.selectCountry": "Select country",
     "form.selectProvince": "Select province",
-    "form.selectCity": "Select city",
+    "form.enterCity": "Enter City",
     "form.enterStreet": "Enter street address",
     "form.searchCountries": "Search countries...",
 
@@ -1342,7 +1344,7 @@ const translations = {
 };
 
 const LanguageContext = createContext<LanguageContextType | undefined>(
-  undefined
+  undefined,
 );
 
 export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({
@@ -1362,7 +1364,7 @@ export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({
     document.documentElement.setAttribute("lang", language);
     document.documentElement.setAttribute(
       "dir",
-      language === "ar" ? "rtl" : "ltr"
+      language === "ar" ? "rtl" : "ltr",
     );
   }, [language]);
 

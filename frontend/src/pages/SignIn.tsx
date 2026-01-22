@@ -31,23 +31,11 @@ export default function SignIn() {
     rememberMe: false,
   });
 
-  const simulateLogin = async (email: string, password: string) => {
-    // Simulate API call delay
-    await new Promise((resolve) => setTimeout(resolve, 2000));
-
-    // Simulate random success/failure (90% success rate)
-    if (Math.random() > 0.1) {
-      await login(email, password);
-    } else {
-      throw new Error(t("auth.loginError"));
-    }
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     await operationStatus.executeOperation(async () => {
-      await simulateLogin(formData.email, formData.password);
+      await login(formData.email, formData.password);
     });
   };
 
@@ -131,7 +119,7 @@ export default function SignIn() {
                 </Label>
                 <Input
                   id="password"
-                  // type="password"
+                  type="password"
                   value={formData.password}
                   onChange={(e) =>
                     handleInputChange("password", e.target.value)

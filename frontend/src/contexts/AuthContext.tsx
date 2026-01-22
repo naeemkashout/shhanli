@@ -26,8 +26,13 @@ interface AuthContextType {
   logout: () => void;
   updatePassword: (
     currentPassword: string,
-    newPassword: string
+    newPassword: string,
   ) => Promise<boolean>;
+  forgotPassword: (data: { email: string }) => Promise<boolean>;
+  resetPassword: (data: {
+    token: string;
+    newPassword: string;
+  }) => Promise<boolean>;
   isLoading: boolean;
   refreshUser: () => Promise<void>;
 }
@@ -93,7 +98,36 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       return false;
     } catch (error: any) {
-      toast.error(error.message || "فشل تسجيل الدخول");
+      // Handle specific error types with detailed messages
+      let errorMessage = "فشل تسجيل الدخول";
+
+      if (error.response?.data?.errorType) {
+        switch (error.response.data.errorType) {
+          case "MISSING_CREDENTIALS":
+            errorMessage = "البريد الإلكتروني وكلمة المرور مطلوبان";
+            break;
+          case "USER_NOT_FOUND":
+            errorMessage =
+              "البريد الإلكتروني غير موجود. يرجى التحقق من البريد الإلكتروني أو التسجيل.";
+            break;
+          case "ACCOUNT_DEACTIVATED":
+            errorMessage = "تم إلغاء تنشيط حسابك. يرجى التواصل مع الدعم.";
+            break;
+          case "INVALID_PASSWORD":
+            errorMessage = "كلمة المرور غير صحيحة. يرجى المحاولة مرة أخرى.";
+            break;
+          default:
+            errorMessage =
+              error.response.data.message ||
+              error.message ||
+              "فشل تسجيل الدخول";
+        }
+      } else {
+        errorMessage =
+          error.response?.data?.message || error.message || "فشل تسجيل الدخول";
+      }
+
+      toast.error(errorMessage);
       return false;
     } finally {
       setIsLoading(false);
@@ -102,7 +136,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const loginWithPhone = async (
     phone: string,
-    otp: string
+    otp: string,
   ): Promise<boolean> => {
     setIsLoading(true);
     try {
@@ -130,7 +164,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       return false;
     } catch (error: any) {
-      toast.error(error.message || "فشل التسجيل");
+      // Handle specific registration errors
+      let errorMessage = "فشل التسجيل";
+
+      if (error.response?.data?.message) {
+        if (error.response.data.message.includes("User already exists")) {
+          errorMessage =
+            "البريد الإلكتروني أو رقم الهاتف موجود مسبقاً. يرجى استخدام بيانات مختلفة.";
+        } else if (error.response.data.message.includes("email")) {
+          errorMessage = "يرجى إدخال بريد إلكتروني صحيح.";
+        } else if (error.response.data.message.includes("password")) {
+          errorMessage = "كلمة المرور يجب أن تكون على الأقل 6 أحرف.";
+        } else if (error.response.data.message.includes("phone")) {
+          errorMessage = "يرجى إدخال رقم هاتف صحيح.";
+        } else {
+          errorMessage = error.response.data.message;
+        }
+      } else {
+        errorMessage = error.message || "فشل التسجيل";
+      }
+
+      toast.error(errorMessage);
       return false;
     } finally {
       setIsLoading(false);
@@ -139,7 +193,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const updatePassword = async (
     currentPassword: string,
-    newPassword: string
+    newPassword: string,
   ): Promise<boolean> => {
     setIsLoading(true);
     try {
@@ -156,6 +210,112 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return false;
     } catch (error: any) {
       toast.error(error.message || "فشل تغيير كلمة المرور");
+      return false;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const forgotPassword = async (data: { email: string }): Promise<boolean> => {
+    setIsLoading(true);
+    try {
+      const response = await authService.forgotPassword(data);
+
+      if (response.success) {
+        toast.success(
+          "تم إرسال رابط إعادة تعيين كلمة المرور إلى بريدك الإلكتروني",
+        );
+        return true;
+      }
+
+      return false;
+    } catch (error: any) {
+      // Handle specific forgot password errors
+      let errorMessage = "فشل في إرسال رابط إعادة التعيين";
+
+      if (error.response?.data?.errorType) {
+        switch (error.response.data.errorType) {
+          case "MISSING_EMAIL":
+            errorMessage = "البريد الإلكتروني مطلوب";
+            break;
+          case "USER_NOT_FOUND":
+            errorMessage = "البريد الإلكتروني غير موجود في النظام";
+            break;
+          case "ACCOUNT_DEACTIVATED":
+            errorMessage = "الحساب معطل. يرجى التواصل مع الدعم";
+            break;
+          case "RESET_ALREADY_SENT":
+            errorMessage =
+              "تم إرسال رابط إعادة التعيين بالفعل. يرجى التحقق من بريدك الإلكتروني";
+            break;
+          case "EMAIL_SEND_FAILED":
+            errorMessage =
+              "فشل في إرسال البريد الإلكتروني. يرجى المحاولة مرة أخرى لاحقاً";
+            break;
+          default:
+            errorMessage =
+              error.response.data.message ||
+              error.message ||
+              "فشل في إرسال رابط إعادة التعيين";
+        }
+      } else {
+        errorMessage =
+          error.response?.data?.message ||
+          error.message ||
+          "فشل في إرسال رابط إعادة التعيين";
+      }
+
+      toast.error(errorMessage);
+      return false;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const resetPassword = async (data: {
+    token: string;
+    newPassword: string;
+  }): Promise<boolean> => {
+    setIsLoading(true);
+    try {
+      const response = await authService.resetPassword(data);
+
+      if (response.success) {
+        toast.success("تم إعادة تعيين كلمة المرور بنجاح");
+        return true;
+      }
+
+      return false;
+    } catch (error: any) {
+      // Handle specific reset password errors
+      let errorMessage = "فشل في إعادة تعيين كلمة المرور";
+
+      if (error.response?.data?.errorType) {
+        switch (error.response.data.errorType) {
+          case "MISSING_DATA":
+            errorMessage = "الرمز المميز وكلمة المرور الجديدة مطلوبان";
+            break;
+          case "INVALID_TOKEN":
+            errorMessage =
+              "الرمز المميز غير صالح أو منتهي الصلاحية. يرجى طلب رابط جديد";
+            break;
+          case "INVALID_PASSWORD":
+            errorMessage = "كلمة المرور يجب أن تكون على الأقل 6 أحرف";
+            break;
+          default:
+            errorMessage =
+              error.response.data.message ||
+              error.message ||
+              "فشل في إعادة تعيين كلمة المرور";
+        }
+      } else {
+        errorMessage =
+          error.response?.data?.message ||
+          error.message ||
+          "فشل في إعادة تعيين كلمة المرور";
+      }
+
+      toast.error(errorMessage);
       return false;
     } finally {
       setIsLoading(false);
@@ -183,6 +343,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         register,
         logout,
         updatePassword,
+        forgotPassword,
+        resetPassword,
         isLoading,
         refreshUser,
       }}

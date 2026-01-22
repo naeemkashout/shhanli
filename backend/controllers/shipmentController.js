@@ -126,7 +126,7 @@ exports.getShipmentById = async (req, res) => {
   try {
     const shipment = await Shipment.findById(req.params.id).populate(
       "userId",
-      "name email phone"
+      "name email phone",
     );
 
     if (!shipment) {
@@ -183,7 +183,7 @@ exports.trackShipment = async (req, res) => {
         status: shipment.status,
         statusHistory: shipment.statusHistory,
         sender: shipment.sender,
-        receiver: shipment.receiver,
+        receivers: shipment.receivers,
         estimatedDelivery: shipment.estimatedDelivery,
         actualDelivery: shipment.actualDelivery,
       },

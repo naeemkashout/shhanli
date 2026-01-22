@@ -26,16 +26,23 @@ exports.getProfile = async (req, res) => {
 // @access  Private
 exports.updateProfile = async (req, res) => {
   try {
-    const { name, phone, address, companyName, commercialRegistrationNumber } =
-      req.body;
+    const {
+      name,
+      phone,
+      address,
+      businessType,
+      companyName,
+      commercialRegistrationNumber,
+    } = req.body;
 
     const user = await User.findById(req.user.id);
 
     if (name) user.name = name;
     if (phone) user.phone = phone;
-    if (address) user.address = address;
-    if (companyName) user.companyName = companyName;
-    if (commercialRegistrationNumber)
+    if (address !== undefined) user.address = address;
+    if (businessType) user.businessType = businessType;
+    if (companyName !== undefined) user.companyName = companyName;
+    if (commercialRegistrationNumber !== undefined)
       user.commercialRegistrationNumber = commercialRegistrationNumber;
 
     await user.save();

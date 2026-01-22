@@ -12,6 +12,9 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { GlobalCountrySelector } from "@/components/GlobalCountrySelector";
+import { SearchableStateSelector } from "@/components/SearchableStateSelector";
+import { GlobalCountry, GlobalState } from "@/data/globalLocations";
 import {
   Dialog,
   DialogContent,
@@ -47,6 +50,7 @@ import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 import OperationStatus from "@/components/OperationStatus";
 import { useOperationStatus } from "@/hooks/useOperationStatus";
+import shipmentService from "@/services/shipmentService";
 
 interface Contact {
   id: string;
@@ -89,74 +93,6 @@ interface Country {
   name: string;
   states: { [key: string]: string[] };
 }
-
-const mockContacts: Contact[] = [
-  {
-    id: "1",
-    name: "أحمد محمد",
-    phone: "+963991234567",
-    email: "ahmed@example.com",
-    address: "شارع الملك فيصل، حي السلامانية",
-    street: "شارع الملك فيصل",
-    city: "aleepo",
-    state: "test",
-    country: "سوريا",
-    clientType: "merchant",
-    companyName: "شركة التجارة المتقدمة",
-    coordinates: { lat: 36.2021, lng: 37.1343 },
-  },
-  {
-    id: "2",
-    name: "فاطمة علي",
-    phone: "+963987654321",
-    email: "fatima@example.com",
-    address: "شارع النور، حي الحرة",
-    street: "شارع النور",
-    city: "دمشق",
-    state: "دمشق",
-    country: "سوريا",
-    clientType: "individual",
-    coordinates: { lat: 33.5138, lng: 36.2765 },
-  },
-  {
-    id: "3",
-    name: "محمد حسن",
-    phone: "+963982222222",
-    email: "mohamed@example.com",
-    address: "شارع الثورة، حي الوعر",
-    street: "شارع الثورة",
-    city: "حمص",
-    state: "حمص",
-    country: "سوريا",
-    clientType: "merchant",
-    companyName: "مؤسسة الشرق للتجارة",
-  },
-  {
-    id: "4",
-    name: "سارة أحمد",
-    phone: "+963933333333",
-    email: "sara@example.com",
-    address: "شارع الجامعة، حي المزة",
-    street: "شارع الجامعة",
-    city: "دمشق",
-    state: "دمشق",
-    country: "سوريا",
-    clientType: "individual",
-  },
-  {
-    id: "5",
-    name: "علي حسن",
-    phone: "+963944444444",
-    email: "ali@example.com",
-    address: "شارع الكورنيش، حي الشاطئ الأزرق",
-    street: "شارع الكورنيش",
-    city: "اللاذقية",
-    state: "اللاذقية",
-    country: "سوريا",
-    clientType: "merchant",
-    companyName: "شركة البحر الأبيض للاستيراد",
-  },
-];
 
 const shippingCompanies: ShippingCompany[] = [
   {
@@ -247,9 +183,9 @@ export default function CreateShipment() {
 
   const [currentStep, setCurrentStep] = useState(1);
   const [shippingType, setShippingType] = useState<"local" | "international">(
-    "local"
+    "local",
   );
-  const [contacts] = useState<Contact[]>(mockContacts);
+  const [contacts] = useState<Contact[]>([]);
   const [isMapOpen, setIsMapOpen] = useState(false);
   const [currentMapTarget, setCurrentMapTarget] = useState<
     "sender" | "receiver"
@@ -267,7 +203,7 @@ export default function CreateShipment() {
     senderAddress: "",
     senderStreet: "",
     commercialRegister: "",
-    senderCountry: t("common.syria"),
+    senderCountry: "SY", // Syria country code for local shipping
     senderState: "",
     senderCity: "",
     senderClientType: "individual" as "individual" | "merchant",
@@ -301,7 +237,7 @@ export default function CreateShipment() {
       email: "",
       address: "",
       street: "",
-      country: t("common.syria"),
+      country: "SY", // Syria country code for local shipping
       state: "",
       city: "",
       coordinates: null,
@@ -313,11 +249,11 @@ export default function CreateShipment() {
     if (shippingType === "local") {
       setFormData((prev) => ({
         ...prev,
-        senderCountry: t("common.syria"),
+        senderCountry: "SY", // Syria country code
         currency: "SYP", // Local shipping uses SYP
       }));
       setReceivers((prev) =>
-        prev.map((receiver) => ({ ...receiver, country: t("common.syria") }))
+        prev.map((receiver) => ({ ...receiver, country: "SY" })),
       );
     } else {
       // International shipping uses USD
@@ -326,28 +262,48 @@ export default function CreateShipment() {
         currency: "USD",
       }));
     }
-  }, [shippingType, t]);
+  }, [shippingType]);
 
   // Calculate estimated cost
   useEffect(() => {
     if (formData.weight && formData.shippingCompany && receivers.length > 0) {
       const company = shippingCompanies.find(
-        (c) => c.id === formData.shippingCompany
+        (c) => c.id === formData.shippingCompany,
       );
       if (company) {
-        const weight = parseFloat(formData.weight);
+        const actualWeight = parseFloat(formData.weight);
+
+        // حساب الوزن الحجمي: (الطول × العرض × الأرتفاع) ÷ 5000
+        const volumetricWeight =
+          formData.length && formData.width && formData.height
+            ? (parseFloat(formData.length) *
+                parseFloat(formData.width) *
+                parseFloat(formData.height)) /
+              5000
+            : 0;
+
+        // استخدام الوزن الأكبر (الوزن العادي أو الوزن الحجمي)
+        const billingWeight = Math.max(actualWeight, volumetricWeight);
+
         let totalCost = 0;
 
         receivers.forEach((receiver) => {
           if (receiver.country && company.pricePerKg[receiver.country]) {
-            totalCost += weight * company.pricePerKg[receiver.country];
+            totalCost += billingWeight * company.pricePerKg[receiver.country];
           }
         });
 
         setEstimatedCost(totalCost);
       }
     }
-  }, [formData.weight, formData.shippingCompany, receivers]);
+  }, [
+    formData.weight,
+    formData.length,
+    formData.width,
+    formData.height,
+    formData.shippingCompany,
+    receivers,
+  ]);
 
   // Update used contact IDs when receivers change
   useEffect(() => {
@@ -355,13 +311,13 @@ export default function CreateShipment() {
       .map(
         (receiver) =>
           contacts.find(
-            (c) => c.name === receiver.name && c.phone === receiver.phone
-          )?.id
+            (c) => c.name === receiver.name && c.phone === receiver.phone,
+          )?.id,
       )
       .filter(Boolean) as string[];
 
     const senderContactId = contacts.find(
-      (c) => c.name === formData.senderName && c.phone === formData.senderPhone
+      (c) => c.name === formData.senderName && c.phone === formData.senderPhone,
     )?.id;
 
     const allUsedIds = [...receiverContactIds];
@@ -382,8 +338,8 @@ export default function CreateShipment() {
 
     return shippingCompanies.filter((company) =>
       receiverCountries.every((country) =>
-        company.supportedCountries.includes(country)
-      )
+        company.supportedCountries.includes(country),
+      ),
     );
   };
 
@@ -406,7 +362,7 @@ export default function CreateShipment() {
   const handleContactSelect = (
     contactId: string,
     type: "sender" | "receiver",
-    receiverIndex?: number
+    receiverIndex?: number,
   ) => {
     const contact = contacts.find((c) => c.id === contactId);
     if (contact) {
@@ -441,8 +397,8 @@ export default function CreateShipment() {
                   city: contact.city,
                   coordinates: contact.coordinates || null,
                 }
-              : receiver
-          )
+              : receiver,
+          ),
         );
       }
     }
@@ -456,7 +412,7 @@ export default function CreateShipment() {
       email: "",
       address: "",
       street: "",
-      country: shippingType === "local" ? t("common.syria") : "",
+      country: shippingType === "local" ? "SY" : "",
       state: "",
       city: "",
       coordinates: null,
@@ -473,18 +429,18 @@ export default function CreateShipment() {
   const updateReceiver = (
     index: number,
     field: string,
-    value: string | { lat: number; lng: number } | null
+    value: string | { lat: number; lng: number } | null,
   ) => {
     setReceivers((prev) =>
       prev.map((receiver, i) =>
-        i === index ? { ...receiver, [field]: value } : receiver
-      )
+        i === index ? { ...receiver, [field]: value } : receiver,
+      ),
     );
   };
 
   const openMapForLocation = (
     target: "sender" | "receiver",
-    receiverIndex?: number
+    receiverIndex?: number,
   ) => {
     setCurrentMapTarget(target);
     if (receiverIndex !== undefined) {
@@ -504,8 +460,8 @@ export default function CreateShipment() {
         prev.map((receiver, index) =>
           index === currentReceiverIndex
             ? { ...receiver, coordinates }
-            : receiver
-        )
+            : receiver,
+        ),
       );
     }
     setIsMapOpen(false);
@@ -528,7 +484,7 @@ export default function CreateShipment() {
     setFormData((prev) => ({
       ...prev,
       senderCompanyDocuments: prev.senderCompanyDocuments.filter(
-        (_, i) => i !== index
+        (_, i) => i !== index,
       ),
     }));
   };
@@ -536,36 +492,52 @@ export default function CreateShipment() {
   const validateStep = (step: number) => {
     switch (step) {
       case 2:
-        if (
-          !formData.senderName ||
-          !formData.senderPhone ||
-          !formData.senderAddress ||
-          !formData.senderCountry ||
-          !formData.senderState ||
-          !formData.senderCity ||
-          !formData.senderStreet ||
-          formData.senderClientType == "merchant"
-            ? formData.senderCompanyName && !formData.commercialRegister
-            : ""
-        ) {
-          toast.error(t("msg.fillSenderRequired"));
+        // التحقق من جميع الحقول المطلوبة للمرسل
+        if (!formData.senderName?.trim()) {
+          toast.error(t("validation.firstNameRequired"));
           return false;
         }
-        if (
-          !formData.senderCountry ||
-          !formData.senderState ||
-          !formData.senderCity
-        ) {
-          toast.error(t("msg.selectSenderLocation"));
+        if (!formData.senderPhone?.trim()) {
+          toast.error(t("validation.phoneRequired"));
           return false;
         }
-        if (
-          formData.senderClientType === "merchant" &&
-          !formData.senderCompanyName
-        ) {
-          toast.error(t("msg.fillCompanyName"));
+        if (!formData.senderEmail?.trim()) {
+          toast.error(t("validation.emailRequired"));
           return false;
         }
+        if (!formData.senderCountry) {
+          toast.error(t("validation.countryRequired"));
+          return false;
+        }
+        if (!formData.senderState) {
+          toast.error(t("validation.provinceRequired"));
+          return false;
+        }
+        if (!formData.senderCity?.trim()) {
+          toast.error(t("validation.cityRequired"));
+          return false;
+        }
+        if (!formData.senderStreet?.trim()) {
+          toast.error(t("validation.streetRequired"));
+          return false;
+        }
+        if (!formData.senderClientType) {
+          toast.error(t("validation.clientTypeRequired"));
+          return false;
+        }
+
+        // التحقق من الحقول الخاصة بالتجار
+        if (formData.senderClientType === "merchant") {
+          if (!formData.senderCompanyName?.trim()) {
+            toast.error(t("validation.companyNameRequired"));
+            return false;
+          }
+          if (!formData.commercialRegister?.trim()) {
+            toast.error(t("validation.commercialRegisterRequired"));
+            return false;
+          }
+        }
+
         return true;
       case 3:
         for (let i = 0; i < receivers.length; i++) {
@@ -638,7 +610,7 @@ export default function CreateShipment() {
               t("msg.insufficientBalance", {
                 balance: balance.toLocaleString(),
                 currency,
-              })
+              }),
             );
             return false;
           }
@@ -675,7 +647,71 @@ export default function CreateShipment() {
 
   const handleSubmit = async () => {
     await operationStatus.executeOperation(async () => {
-      await simulateShipmentCreation();
+      // Prepare shipment data
+      const shipmentData = {
+        shippingType,
+        sender: {
+          name: formData.senderName,
+          phone: formData.senderPhone,
+          email: formData.senderEmail,
+          address: formData.senderAddress,
+          street: formData.senderStreet,
+          country: formData.senderCountry,
+          state: formData.senderState,
+          city: formData.senderCity,
+          clientType: formData.senderClientType,
+          companyName: formData.senderCompanyName,
+          commercialRegister: formData.commercialRegister,
+          coordinates: formData.senderCoordinates,
+        },
+        receivers: receivers.map((receiver) => ({
+          name: receiver.name,
+          phone: receiver.phone,
+          email: receiver.email,
+          address: receiver.address,
+          street: receiver.street,
+          country: receiver.country,
+          state: receiver.state,
+          city: receiver.city,
+          coordinates: receiver.coordinates,
+        })),
+        package: {
+          type: formData.packageType,
+          weight: parseFloat(formData.weight),
+          length: parseFloat(formData.length),
+          width: parseFloat(formData.width),
+          height: parseFloat(formData.height),
+          description: formData.description,
+          value: parseFloat(formData.value),
+          currency: formData.currency,
+          fragile: formData.fragile,
+        },
+        shippingCompany: {
+          id: formData.shippingCompany,
+          name: getSelectedCompany()?.name || "",
+        },
+        cost: {
+          amount: estimatedCost,
+          currency: formData.currency,
+          paymentMethod: formData.paymentMethod,
+          volumetricWeight:
+            (parseFloat(formData.length) *
+              parseFloat(formData.width) *
+              parseFloat(formData.height)) /
+            5000,
+          actualWeight: parseFloat(formData.weight),
+          billingWeight: Math.max(
+            parseFloat(formData.weight),
+            (parseFloat(formData.length) *
+              parseFloat(formData.width) *
+              parseFloat(formData.height)) /
+              5000,
+          ),
+        },
+        notes: formData.notes,
+      };
+
+      await shipmentService.createShipment(shipmentData);
     });
   };
 
@@ -683,7 +719,7 @@ export default function CreateShipment() {
     operationStatus.reset();
     navigate("/shipments");
     toast.success(
-      t("msg.shipmentCreatedMultiple", { count: receivers.length })
+      t("msg.shipmentCreatedMultiple", { count: receivers.length }),
     );
   };
 
@@ -757,8 +793,8 @@ export default function CreateShipment() {
                     step.number === currentStep
                       ? "border-blue-600 bg-blue-600 text-white"
                       : step.number < currentStep
-                      ? "border-green-600 bg-green-600 text-white"
-                      : "border-gray-300 bg-white text-gray-500"
+                        ? "border-green-600 bg-green-600 text-white"
+                        : "border-gray-300 bg-white text-gray-500"
                   }`}
                 >
                   {step.number < currentStep ? (
@@ -875,7 +911,7 @@ export default function CreateShipment() {
                     <SelectContent>
                       {getAvailableContacts().map((contact) => {
                         const ClientIcon = getClientTypeIcon(
-                          contact.clientType
+                          contact.clientType,
                         );
                         return (
                           <SelectItem key={contact.id} value={contact.id}>
@@ -941,7 +977,10 @@ export default function CreateShipment() {
                     />
                   </div>
                   <div>
-                    <Label htmlFor="senderEmail">{t("sender.email")}</Label>
+                    <Label htmlFor="senderEmail">
+                      {t("sender.email")}{" "}
+                      <span className="text-red-500">*</span>
+                    </Label>
                     <Input
                       id="senderEmail"
                       type="email"
@@ -1044,100 +1083,65 @@ export default function CreateShipment() {
                 {/* Country, State, City Selection for Sender */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div>
-                    <Label htmlFor="senderCountry">
+                    <Label className="text-sm font-medium text-gray-700">
                       {t("sender.country")}{" "}
-                      <span className="text-red-500">
-                        {t("common.required")}
-                      </span>
+                      <span className="text-red-500">*</span>
                     </Label>
-                    <Select
+                    <GlobalCountrySelector
                       value={formData.senderCountry}
-                      onValueChange={(value) =>
+                      onChange={(country) =>
                         setFormData((prev) => ({
                           ...prev,
-                          senderCountry: value,
+                          senderCountry: country.code,
                           senderState: "",
                           senderCity: "",
                         }))
                       }
                       disabled={shippingType === "local"}
-                    >
-                      <SelectTrigger className="mt-2">
-                        <SelectValue placeholder={t("common.selectCountry")} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {countries.map((country) => (
-                          <SelectItem key={country.code} value={country.name}>
-                            {t(`common.${country.code.toLowerCase()}`)}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                      className="h-11 sm:h-12"
+                    />
                   </div>
+
                   <div>
-                    <Label htmlFor="senderState">
+                    <Label className="text-sm font-medium text-gray-700">
                       {t("sender.state")}{" "}
-                      <span className="text-red-500">
-                        {t("common.required")}
-                      </span>
+                      <span className="text-red-500">*</span>
                     </Label>
-                    <Select
+                    <SearchableStateSelector
+                      countryCode={formData.senderCountry}
                       value={formData.senderState}
-                      onValueChange={(value) =>
+                      onChange={(province) =>
                         setFormData((prev) => ({
                           ...prev,
-                          senderState: value,
+                          senderState: province.code,
                           senderCity: "",
                         }))
                       }
-                      disabled={!formData.senderCountry}
-                    >
-                      <SelectTrigger className="mt-2">
-                        <SelectValue placeholder={t("common.selectState")} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {getStatesForCountry(formData.senderCountry).map(
-                          (state) => (
-                            <SelectItem key={state} value={state}>
-                              {state}
-                            </SelectItem>
-                          )
-                        )}
-                      </SelectContent>
-                    </Select>
+                      className="h-11 sm:h-12"
+                    />
                   </div>
+
                   <div>
-                    <Label htmlFor="senderCity">
-                      {t("sender.city")}{" "}
-                      <span className="text-red-500">
-                        {t("common.required")}
-                      </span>
+                    <Label className="text-sm font-medium text-gray-700">
+                      {t("sender.city")} <span className="text-red-500">*</span>
                     </Label>
-                    <Select
+                    <Input
                       value={formData.senderCity}
-                      onValueChange={(value) =>
-                        setFormData((prev) => ({ ...prev, senderCity: value }))
+                      onChange={(e) =>
+                        setFormData((prev) => ({
+                          ...prev,
+                          senderCity: e.target.value,
+                        }))
                       }
-                      disabled={!formData.senderState}
-                    >
-                      <SelectTrigger className="mt-2">
-                        <SelectValue placeholder={t("common.selectCity")} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {getCitiesForState(
-                          formData.senderCountry,
-                          formData.senderState
-                        ).map((city) => (
-                          <SelectItem key={city} value={city}>
-                            {city}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                      placeholder={t("form.enterCity")}
+                      className="h-11 sm:h-12 text-base"
+                    />
                   </div>
                 </div>
                 <div>
-                  <Label htmlFor="senderStreet">{t("sender.street")}</Label>
+                  <Label htmlFor="senderStreet">
+                    {t("sender.street")} <span className="text-red-500">*</span>
+                  </Label>
                   <Input
                     id="senderStreet"
                     value={formData.senderStreet}
@@ -1316,96 +1320,48 @@ export default function CreateShipment() {
                       {/* Country, State, City Selection */}
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div>
-                          <Label>
+                          <Label className="text-sm font-medium text-gray-700">
                             {t("sender.country")}{" "}
-                            <span className="text-red-500">
-                              {t("common.required")}
-                            </span>
+                            <span className="text-red-500">*</span>
                           </Label>
-                          <Select
+                          <GlobalCountrySelector
                             value={receiver.country}
-                            onValueChange={(value) =>
-                              updateReceiver(index, "country", value)
+                            onChange={(country) =>
+                              updateReceiver(index, "country", country.code)
                             }
                             disabled={shippingType === "local"}
-                          >
-                            <SelectTrigger className="mt-2">
-                              <SelectValue
-                                placeholder={t("common.selectCountry")}
-                              />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {countries.map((country) => (
-                                <SelectItem
-                                  key={country.code}
-                                  value={country.name}
-                                >
-                                  {t(`common.${country.code.toLowerCase()}`)}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
+                            className="h-11 sm:h-12"
+                          />
                         </div>
+
                         <div>
-                          <Label>
+                          <Label className="text-sm font-medium text-gray-700">
                             {t("sender.state")}{" "}
-                            <span className="text-red-500">
-                              {t("common.required")}
-                            </span>
+                            <span className="text-red-500">*</span>
                           </Label>
-                          <Select
+                          <SearchableStateSelector
+                            countryCode={receiver.country}
                             value={receiver.state}
-                            onValueChange={(value) =>
-                              updateReceiver(index, "state", value)
+                            onChange={(province) =>
+                              updateReceiver(index, "state", province.code)
                             }
-                            disabled={!receiver.country}
-                          >
-                            <SelectTrigger className="mt-2">
-                              <SelectValue
-                                placeholder={t("common.selectState")}
-                              />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {getStatesForCountry(receiver.country).map(
-                                (state) => (
-                                  <SelectItem key={state} value={state}>
-                                    {state}
-                                  </SelectItem>
-                                )
-                              )}
-                            </SelectContent>
-                          </Select>
+                            className="h-11 sm:h-12"
+                          />
                         </div>
+
                         <div>
-                          <Label>
+                          <Label className="text-sm font-medium text-gray-700">
                             {t("sender.city")}{" "}
-                            <span className="text-red-500">
-                              {t("common.required")}
-                            </span>
+                            <span className="text-red-500">*</span>
                           </Label>
-                          <Select
+                          <Input
                             value={receiver.city}
-                            onValueChange={(value) =>
-                              updateReceiver(index, "city", value)
+                            onChange={(e) =>
+                              updateReceiver(index, "city", e.target.value)
                             }
-                            disabled={!receiver.state}
-                          >
-                            <SelectTrigger className="mt-2">
-                              <SelectValue
-                                placeholder={t("common.selectCity")}
-                              />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {getCitiesForState(
-                                receiver.country,
-                                receiver.state
-                              ).map((city) => (
-                                <SelectItem key={city} value={city}>
-                                  {city}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
+                            placeholder={t("form.enterCity")}
+                            className="h-11 sm:h-12 text-base"
+                          />
                         </div>
                       </div>
 
@@ -1716,19 +1672,79 @@ export default function CreateShipment() {
                 </div>
 
                 {estimatedCost > 0 && (
-                  <div className="p-4 bg-blue-50 rounded-lg">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <Calculator className="w-5 h-5 text-blue-600" />
-                        <span className="font-medium text-blue-900">
-                          {t("shipment.totalCostFor", {
-                            count: receivers.length,
-                          })}
+                  <div className="p-4 bg-blue-50 rounded-lg space-y-3">
+                    {/* تفاصيل الوزن والحساب */}
+                    <div className="space-y-2">
+                      <h4 className="font-medium text-blue-900 text-sm">
+                        {t("package.weightCalculation")}
+                      </h4>
+                      <div className="grid grid-cols-2 gap-4 text-sm">
+                        <div>
+                          <span className="text-gray-600">
+                            {t("package.actualWeight")}:
+                          </span>
+                          <span className="font-medium ml-2">
+                            {parseFloat(formData.weight) || 0} kg
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-gray-600">
+                            {t("package.volumetricWeight")}:
+                          </span>
+                          <span className="font-medium ml-2">
+                            {formData.length &&
+                            formData.width &&
+                            formData.height
+                              ? (
+                                  (parseFloat(formData.length) *
+                                    parseFloat(formData.width) *
+                                    parseFloat(formData.height)) /
+                                  5000
+                                ).toFixed(2)
+                              : "0.00"}{" "}
+                            kg
+                          </span>
+                        </div>
+                      </div>
+                      <div className="text-sm">
+                        <span className="text-gray-600">
+                          {t("package.billingWeight")}:
+                        </span>
+                        <span className="font-medium ml-2 text-blue-700">
+                          {formData.weight &&
+                          formData.length &&
+                          formData.width &&
+                          formData.height
+                            ? Math.max(
+                                parseFloat(formData.weight),
+                                (parseFloat(formData.length) *
+                                  parseFloat(formData.width) *
+                                  parseFloat(formData.height)) /
+                                  5000,
+                              ).toFixed(2)
+                            : (parseFloat(formData.weight) || 0).toFixed(
+                                2,
+                              )}{" "}
+                          kg
                         </span>
                       </div>
-                      <span className="text-xl font-bold text-blue-600">
-                        {formatAmount(estimatedCost, formData.currency)}
-                      </span>
+                    </div>
+
+                    {/* إجمالي التكلفة */}
+                    <div className="border-t border-blue-200 pt-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Calculator className="w-5 h-5 text-blue-600" />
+                          <span className="font-medium text-blue-900">
+                            {t("shipment.totalCostFor", {
+                              count: receivers.length,
+                            })}
+                          </span>
+                        </div>
+                        <span className="text-xl font-bold text-blue-600">
+                          {formatAmount(estimatedCost, formData.currency)}
+                        </span>
+                      </div>
                     </div>
                   </div>
                 )}
@@ -1844,7 +1860,7 @@ export default function CreateShipment() {
                         <div className="flex items-center gap-1">
                           {React.createElement(
                             getClientTypeIcon(formData.senderClientType),
-                            { className: "w-4 h-4" }
+                            { className: "w-4 h-4" },
                           )}
                           <span className="font-medium">
                             {getClientTypeLabel(formData.senderClientType)}

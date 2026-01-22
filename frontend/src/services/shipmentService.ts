@@ -1,40 +1,60 @@
 import api, { handleApiError } from "./api";
 
 export interface CreateShipmentData {
+  shippingType: "local" | "international";
   sender: {
     name: string;
     phone: string;
-    address: string;
-    city: string;
+    email: string;
+    address?: string;
+    street: string;
     country: string;
+    state: string;
+    city: string;
+    clientType: "individual" | "merchant";
+    companyName?: string;
+    commercialRegister?: string;
+    coordinates?: {
+      lat: number;
+      lng: number;
+    };
   };
-  receiver: {
+  receivers: Array<{
     name: string;
     phone: string;
-    address: string;
-    city: string;
+    email?: string;
+    address?: string;
+    street: string;
     country: string;
-  };
+    state: string;
+    city: string;
+    coordinates?: {
+      lat: number;
+      lng: number;
+    };
+  }>;
   package: {
     type: string;
     weight: number;
-    dimensions?: {
-      length: number;
-      width: number;
-      height: number;
-    };
-    description?: string;
-    value?: number;
-    quantity?: number;
+    length: number;
+    width: number;
+    height: number;
+    description: string;
+    value: number;
+    currency: string;
+    fragile?: boolean;
   };
-  service: {
-    type: string;
-    deliveryTime?: string;
+  shippingCompany: {
+    id: string;
+    name: string;
   };
   cost: {
     amount: number;
     currency: string;
-    paymentMethod: string;
+    paymentMethod: "wallet" | "cod";
+    volumetricWeight?: number;
+    actualWeight?: number;
+    billingWeight?: number;
   };
   notes?: string;
 }
