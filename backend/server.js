@@ -168,13 +168,18 @@ const ensureAdminUser = async () => {
     const adminPassword = (process.env.ADMIN_PASSWORD || "").trim();
 
     if (!adminEmail || !adminPassword) {
-      console.log("ℹ️ تم تجاوز إنشاء حساب الإدارة (ADMIN_EMAIL/ADMIN_PASSWORD غير موجودين)");
+      console.log(
+        "ℹ️ تم تجاوز إنشاء حساب الإدارة (ADMIN_EMAIL/ADMIN_PASSWORD غير موجودين)",
+      );
       return;
     }
 
     const existingAdmin = await User.findOne({ email: adminEmail });
     if (existingAdmin) {
-      if (existingAdmin.role !== "admin" && existingAdmin.role !== "super-admin") {
+      if (
+        existingAdmin.role !== "admin" &&
+        existingAdmin.role !== "super-admin"
+      ) {
         existingAdmin.role = "admin";
         existingAdmin.isActive = true;
         await existingAdmin.save();

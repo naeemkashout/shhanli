@@ -42,7 +42,8 @@ export default function Notifications() {
   const navigate = useNavigate();
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [statusFilter, setStatusFilter] = useState<NotificationStatusFilter>("all");
+  const [statusFilter, setStatusFilter] =
+    useState<NotificationStatusFilter>("all");
 
   const loadNotifications = async () => {
     try {
@@ -55,7 +56,9 @@ export default function Notifications() {
       const loadedNotifications = response?.data || [];
       setNotifications(loadedNotifications);
 
-      const unreadCount = loadedNotifications.filter((item: NotificationItem) => !item.isRead).length;
+      const unreadCount = loadedNotifications.filter(
+        (item: NotificationItem) => !item.isRead,
+      ).length;
       window.dispatchEvent(
         new CustomEvent("notifications:sync", {
           detail: { unreadCount },
@@ -76,7 +79,9 @@ export default function Notifications() {
     const autoMarkAllAsRead = async () => {
       try {
         await notificationService.markAllAsRead();
-        setNotifications((prev) => prev.map((item) => ({ ...item, isRead: true })));
+        setNotifications((prev) =>
+          prev.map((item) => ({ ...item, isRead: true })),
+        );
         window.dispatchEvent(
           new CustomEvent("notifications:sync", {
             detail: { unreadCount: 0 },
@@ -94,7 +99,8 @@ export default function Notifications() {
     const userId = String(user?.id || "").trim();
     if (!userId) return;
 
-    const apiBaseUrl = import.meta.env.VITE_API_URL || "http://localhost:5001/api";
+    const apiBaseUrl =
+      import.meta.env.VITE_API_URL || "http://localhost:5001/api";
     const socketUrl = apiBaseUrl.replace(/\/api\/?$/, "");
 
     const socket: Socket = io(socketUrl, {
@@ -194,7 +200,9 @@ export default function Notifications() {
     <div className={`container mx-auto p-6 space-y-6 ${isRTL ? "rtl" : "ltr"}`}>
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">{t("notifications.title")}</h1>
+          <h1 className="text-2xl font-bold text-gray-900">
+            {t("notifications.title")}
+          </h1>
           <p className="text-sm text-gray-600">{t("notifications.subtitle")}</p>
         </div>
         <div className="flex items-center gap-3">
@@ -209,21 +217,29 @@ export default function Notifications() {
           <div className="flex items-center gap-3">
             <Select
               value={statusFilter}
-              onValueChange={(value) => setStatusFilter(value as NotificationStatusFilter)}
+              onValueChange={(value) =>
+                setStatusFilter(value as NotificationStatusFilter)
+              }
             >
               <SelectTrigger className="w-52">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">{t("notifications.filterAll")}</SelectItem>
-                <SelectItem value="unread">{t("notifications.filterUnread")}</SelectItem>
+                <SelectItem value="all">
+                  {t("notifications.filterAll")}
+                </SelectItem>
+                <SelectItem value="unread">
+                  {t("notifications.filterUnread")}
+                </SelectItem>
               </SelectContent>
             </Select>
           </div>
         </CardHeader>
         <CardContent>
           {isLoading ? (
-            <div className="py-8 text-center text-gray-500">{t("common.loading")}</div>
+            <div className="py-8 text-center text-gray-500">
+              {t("common.loading")}
+            </div>
           ) : notifications.length === 0 ? (
             <div className="py-8 text-center text-gray-500">
               <Bell className="w-10 h-10 mx-auto mb-3 opacity-50" />
@@ -242,17 +258,23 @@ export default function Notifications() {
                   <div className="flex items-start justify-between gap-3">
                     <div className="space-y-1">
                       <div className="flex items-center gap-2">
-                        {!item.isRead && <Circle className="w-3 h-3 text-blue-600 fill-blue-600" />}
+                        {!item.isRead && (
+                          <Circle className="w-3 h-3 text-blue-600 fill-blue-600" />
+                        )}
                         <h3 className="font-semibold text-gray-900">
                           {language === "ar" ? item.titleAr : item.titleEn}
                         </h3>
-                        <Badge variant="secondary">{getTypeLabel(item.type)}</Badge>
+                        <Badge variant="secondary">
+                          {getTypeLabel(item.type)}
+                        </Badge>
                       </div>
                       <p className="text-sm text-gray-700">
                         {language === "ar" ? item.messageAr : item.messageEn}
                       </p>
                       <p className="text-xs text-gray-500">
-                        {new Date(item.createdAt).toLocaleString(language === "ar" ? "ar-SY" : "en-US")}
+                        {new Date(item.createdAt).toLocaleString(
+                          language === "ar" ? "ar-SY" : "en-US",
+                        )}
                       </p>
                     </div>
                     {!item.isRead && (

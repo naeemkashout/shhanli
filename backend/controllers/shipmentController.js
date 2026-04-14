@@ -22,7 +22,10 @@ const normalizeLocationValue = (value) => {
 exports.createShipment = async (req, res) => {
   try {
     const selectedCompanyId = req.body?.shippingCompany?.id;
-    if (!selectedCompanyId || !mongoose.Types.ObjectId.isValid(selectedCompanyId)) {
+    if (
+      !selectedCompanyId ||
+      !mongoose.Types.ObjectId.isValid(selectedCompanyId)
+    ) {
       return res.status(400).json({
         success: false,
         message: "Invalid shipping company",
@@ -78,9 +81,14 @@ exports.createShipment = async (req, res) => {
       });
     }
 
-    const receivers = Array.isArray(req.body?.receivers) ? req.body.receivers : [];
+    const receivers = Array.isArray(req.body?.receivers)
+      ? req.body.receivers
+      : [];
 
-    if (shippingType === "local" && shippingCompany.supportedLocalStates?.length) {
+    if (
+      shippingType === "local" &&
+      shippingCompany.supportedLocalStates?.length
+    ) {
       const supportedStates = new Set(
         shippingCompany.supportedLocalStates.map((value) =>
           normalizeLocationValue(value),
@@ -127,12 +135,14 @@ exports.createShipment = async (req, res) => {
     const length = Number(req.body?.package?.length) || 0;
     const width = Number(req.body?.package?.width) || 0;
     const height = Number(req.body?.package?.height) || 0;
-    const volumetricDivisor = Number(shippingCompany.volumetricDivisor) > 0
-      ? Number(shippingCompany.volumetricDivisor)
-      : 6000;
-    const volumetricWeight = length && width && height
-      ? (length * width * height) / volumetricDivisor
-      : 0;
+    const volumetricDivisor =
+      Number(shippingCompany.volumetricDivisor) > 0
+        ? Number(shippingCompany.volumetricDivisor)
+        : 6000;
+    const volumetricWeight =
+      length && width && height
+        ? (length * width * height) / volumetricDivisor
+        : 0;
     const billingWeight = Math.max(actualWeight, volumetricWeight);
     const pricePerKg =
       shippingType === "international"

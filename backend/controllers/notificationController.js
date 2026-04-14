@@ -133,6 +133,9 @@ exports.markAllAsRead = async (req, res) => {
 exports.createAndEmitNotification = async (req, payload) => {
   const notification = await Notification.create(payload);
   const io = req.app.get("io");
-  io.to(`user-room-${String(payload.userId)}`).emit("new-notification", notification);
+  io.to(`user-room-${String(payload.userId)}`).emit(
+    "new-notification",
+    notification,
+  );
   return notification;
 };

@@ -18,7 +18,7 @@ exports.getShippingCompanies = async (req, res) => {
 
     const companies = await ShippingCompany.find(query)
       .select(
-        "name code email phone address description logoUrl trackingUrlTemplate supportsLocal supportsInternational supportedCountries supportedLocalStates pricing volumetricDivisor codService isActive"
+        "name code email phone address description logoUrl trackingUrlTemplate supportsLocal supportsInternational supportedCountries supportedLocalStates pricing volumetricDivisor codService isActive",
       )
       .sort({ name: 1 });
 
