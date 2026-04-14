@@ -11,10 +11,113 @@ class AdminService {
     }
   }
 
+  // Companies Management
+  async getAllCompanies(params?: {
+    search?: string;
+    isActive?: boolean;
+    page?: number;
+    limit?: number;
+  }): Promise<any> {
+    try {
+      const response = await api.get("/admin/companies", { params });
+      return response.data;
+    } catch (error) {
+      throw new Error(handleApiError(error));
+    }
+  }
+
+  async getMyCompany(): Promise<any> {
+    try {
+      const response = await api.get("/admin/companies/me");
+      return response.data.data;
+    } catch (error) {
+      throw new Error(handleApiError(error));
+    }
+  }
+
+  async createCompany(data: any): Promise<any> {
+    try {
+      const response = await api.post("/admin/companies", data);
+      return response.data;
+    } catch (error) {
+      throw new Error(handleApiError(error));
+    }
+  }
+
+  async updateCompany(id: string, data: any): Promise<any> {
+    try {
+      const response = await api.put(`/admin/companies/${id}`, data);
+      return response.data;
+    } catch (error) {
+      throw new Error(handleApiError(error));
+    }
+  }
+
+  async updateMyCompany(data: any): Promise<any> {
+    try {
+      const response = await api.put("/admin/companies/me", data);
+      return response.data;
+    } catch (error) {
+      throw new Error(handleApiError(error));
+    }
+  }
+
+  async deleteCompany(id: string): Promise<any> {
+    try {
+      const response = await api.delete(`/admin/companies/${id}`);
+      return response.data;
+    } catch (error) {
+      throw new Error(handleApiError(error));
+    }
+  }
+
+  async upsertCompanyAdminAccount(
+    companyId: string,
+    data: {
+      name?: string;
+      email: string;
+      phone?: string;
+      password?: string;
+      resetPassword?: boolean;
+    },
+  ): Promise<any> {
+    try {
+      const response = await api.post(
+        `/admin/companies/${companyId}/admin-account`,
+        data,
+      );
+      return response.data;
+    } catch (error) {
+      throw new Error(handleApiError(error));
+    }
+  }
+
+  async uploadCompanyLogo(file: File): Promise<string> {
+    try {
+      const formData = new FormData();
+      formData.append("logo", file);
+
+      const response = await api.post(
+        "/admin/companies/upload-logo",
+        formData,
+        {
+          headers: {
+            "Content-Type": "multipart/form-data",
+          },
+        },
+      );
+
+      return response.data.data.logoUrl;
+    } catch (error) {
+      throw new Error(handleApiError(error));
+    }
+  }
+
   // Users Management
   async getAllUsers(params?: {
     search?: string;
     role?: string;
+    companyId?: string;
     isActive?: boolean;
     page?: number;
     limit?: number;
@@ -60,16 +163,52 @@ class AdminService {
     }
   }
 
+  async getCancellationRequests(params?: {
+    status?: "pending" | "approved" | "rejected" | "all";
+    search?: string;
+    page?: number;
+    limit?: number;
+  }): Promise<any> {
+    try {
+      const response = await api.get("/admin/cancellation-requests", {
+        params,
+      });
+      return response.data;
+    } catch (error) {
+      throw new Error(handleApiError(error));
+    }
+  }
+
   async updateShipmentStatus(
     id: string,
     data: {
       status: string;
       note?: string;
       location?: string;
-    }
+      correctedWeight?: number;
+      weightAdjustmentNote?: string;
+    },
   ): Promise<any> {
     try {
       const response = await api.put(`/admin/shipments/${id}/status`, data);
+      return response.data;
+    } catch (error) {
+      throw new Error(handleApiError(error));
+    }
+  }
+
+  async reviewCancellationRequest(
+    id: string,
+    data: {
+      action: "approve" | "reject";
+      note?: string;
+    },
+  ): Promise<any> {
+    try {
+      const response = await api.put(
+        `/admin/shipments/${id}/cancellation-request`,
+        data,
+      );
       return response.data;
     } catch (error) {
       throw new Error(handleApiError(error));
@@ -80,11 +219,61 @@ class AdminService {
   async getAllTransactions(params?: {
     type?: string;
     status?: string;
+    scope?: "company-settlement" | "all";
+    companyId?: string;
+    search?: string;
+    shipmentStatus?: string;
+    paymentMethod?: string;
+    currency?: string;
+    dateFrom?: string;
+    dateTo?: string;
     page?: number;
     limit?: number;
   }): Promise<any> {
     try {
       const response = await api.get("/admin/transactions", { params });
+      return response.data;
+    } catch (error) {
+      throw new Error(handleApiError(error));
+    }
+  }
+
+  async reviewWithdrawalRequest(
+    id: string,
+    data: {
+      action: "approve" | "reject";
+      note?: string;
+    },
+  ): Promise<any> {
+    try {
+      const response = await api.put(
+        `/admin/transactions/${id}/withdrawal-review`,
+        data,
+      );
+      return response.data;
+    } catch (error) {
+      throw new Error(handleApiError(error));
+    }
+  }
+
+  async importComparisonInvoices(file: File): Promise<any> {
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const response = await api.post(
+        "/admin/comparison-invoices/import",
+        formData,
+        {
+          headers: {
+            "Content-Type": "multipart/form-data",
+          },
+          // Large comparison files can take several minutes to process.
+          // Keep a long but finite timeout to avoid endless loading state.
+          timeout: 15 * 60 * 1000,
+        },
+      );
+
       return response.data;
     } catch (error) {
       throw new Error(handleApiError(error));
@@ -108,10 +297,62 @@ class AdminService {
   }
 
   // Export
-  async exportToExcel(type: "users" | "shipments"): Promise<Blob> {
+  async exportToExcel(
+    type: "users" | "shipments",
+    params?: { language?: "ar" | "en" },
+  ): Promise<Blob> {
     try {
       const response = await api.get("/admin/export/excel", {
-        params: { type },
+        params: { type, ...params },
+        responseType: "blob",
+      });
+      return response.data;
+    } catch (error) {
+      throw new Error(handleApiError(error));
+    }
+  }
+
+  async exportCompanySettlementExcel(params?: {
+    companyId?: string;
+    search?: string;
+    shipmentStatus?: string;
+    paymentMethod?: string;
+    currency?: string;
+    dateFrom?: string;
+    dateTo?: string;
+    language?: "ar" | "en";
+  }): Promise<Blob> {
+    try {
+      const response = await api.get("/admin/export/excel", {
+        params: {
+          type: "company-settlement",
+          ...params,
+        },
+        responseType: "blob",
+      });
+      return response.data;
+    } catch (error) {
+      throw new Error(handleApiError(error));
+    }
+  }
+
+  async exportTransactionsExcel(params?: {
+    transactionType?: string;
+    status?: string;
+    scope?: "company-settlement" | "all";
+    search?: string;
+    paymentMethod?: string;
+    currency?: string;
+    dateFrom?: string;
+    dateTo?: string;
+    language?: "ar" | "en";
+  }): Promise<Blob> {
+    try {
+      const response = await api.get("/admin/export/excel", {
+        params: {
+          type: "transactions",
+          ...params,
+        },
         responseType: "blob",
       });
       return response.data;

@@ -2,6 +2,7 @@ const User = require("../models/User");
 const Shipment = require("../models/Shipment");
 const Transaction = require("../models/Transaction");
 const ActivityLog = require("../models/ActivityLog");
+const ShippingCompany = require("../models/ShippingCompany");
 const ExcelJS = require("exceljs");
 const PDFDocument = require("pdfkit");
 
@@ -92,6 +93,50 @@ exports.getDashboardStats = async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Error fetching dashboard stats",
+      error: error.message,
+    });
+  }
+};
+
+// @desc    Get all shipping companies
+// @route   GET /api/admin/companies
+// @access  Private/Admin
+exports.getAllCompanies = async (req, res) => {
+  try {
+    const { search, isActive, page = 1, limit = 10 } = req.query;
+
+    const query = {};
+    if (search) {
+      query.$or = [
+        { name: { $regex: search, $options: "i" } },
+        { code: { $regex: search, $options: "i" } },
+        { email: { $regex: search, $options: "i" } },
+      ];
+    }
+    if (isActive !== undefined) query.isActive = isActive === "true";
+
+    const companies = await ShippingCompany.find(query)
+      .populate("ownerUserId", "name email phone")
+      .sort({ createdAt: -1 })
+      .limit(limit * 1)
+      .skip((page - 1) * limit);
+
+    const count = await ShippingCompany.countDocuments(query);
+
+    res.json({
+      success: true,
+      data: companies,
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total: count,
+        pages: Math.ceil(count / limit),
+      },
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Error fetching companies",
       error: error.message,
     });
   }
@@ -420,7 +465,7 @@ exports.exportToExcel = async (req, res) => {
 
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet(
-      type === "users" ? "Users" : "Shipments"
+      type === "users" ? "Users" : "Shipments",
     );
 
     if (type === "users") {
@@ -477,11 +522,11 @@ exports.exportToExcel = async (req, res) => {
 
     res.setHeader(
       "Content-Type",
-      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     );
     res.setHeader(
       "Content-Disposition",
-      `attachment; filename=${type}-${Date.now()}.xlsx`
+      `attachment; filename=${type}-${Date.now()}.xlsx`,
     );
 
     await workbook.xlsx.write(res);

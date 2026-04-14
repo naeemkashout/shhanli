@@ -6,6 +6,13 @@ export interface DepositData {
   method: string;
 }
 
+export interface WithdrawalRequestData {
+  amount: number;
+  currency: string;
+  method: string;
+  notes?: string;
+}
+
 class WalletService {
   async getBalance(): Promise<any> {
     try {
@@ -19,6 +26,15 @@ class WalletService {
   async deposit(data: DepositData): Promise<any> {
     try {
       const response = await api.post("/wallet/deposit", data);
+      return response.data;
+    } catch (error) {
+      throw new Error(handleApiError(error));
+    }
+  }
+
+  async requestWithdrawal(data: WithdrawalRequestData): Promise<any> {
+    try {
+      const response = await api.post("/wallet/withdraw", data);
       return response.data;
     } catch (error) {
       throw new Error(handleApiError(error));
@@ -43,6 +59,26 @@ class WalletService {
     try {
       const response = await api.get(`/wallet/transactions/${id}`);
       return response.data.data;
+    } catch (error) {
+      throw new Error(handleApiError(error));
+    }
+  }
+
+  async exportTransactionsExcel(params?: {
+    type?: string;
+    status?: string;
+    currency?: string;
+    search?: string;
+    dateFrom?: string;
+    dateTo?: string;
+    language?: "ar" | "en";
+  }): Promise<Blob> {
+    try {
+      const response = await api.get("/wallet/transactions/export/excel", {
+        params,
+        responseType: "blob",
+      });
+      return response.data;
     } catch (error) {
       throw new Error(handleApiError(error));
     }

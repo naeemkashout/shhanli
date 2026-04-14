@@ -1,189 +1,257 @@
-# Kashout Backend API
+# Kashout - نظام إدارة الشحنات
 
-Backend API for Kashout Shipment Management System built with Node.js, Express, and MongoDB.
+نظام متكامل لإدارة الشحنات المحلية والدولية مع واجهة مستخدم عربية/إنجليزية.
 
-## Features
+## المميزات
 
-- 🔐 JWT Authentication & Authorization
-- 👥 User Management
-- 📦 Shipment Management
-- 💰 Wallet & Transactions
-- 📊 Admin Dashboard
-- 📝 Activity Logging
-- 🔄 Real-time Updates (Socket.io)
-- 📤 Data Export (Excel/PDF)
+- ✅ نظام مصادقة كامل (تسجيل دخول، تسجيل، استعادة كلمة المرور)
+- ✅ إدارة الشحنات (إنشاء، تتبع، إلغاء)
+- ✅ نظام المحفظة الإلكترونية (USD & SYP)
+- ✅ إدارة جهات الاتصال
+- ✅ لوحة تحكم إدارية
+- ✅ دعم اللغتين العربية والإنجليزية
+- ✅ تصميم متجاوب (Mobile First)
+- ✅ طباعة وتصدير البوليصات (PDF)
 
-## Installation
+## التقنيات المستخدمة
 
-1. Install dependencies:
+### Backend
+- Node.js + Express
+- MongoDB + Mongoose
+- JWT Authentication
+- Socket.io (Real-time notifications)
+- Nodemailer (Email service)
 
+### Frontend
+- React 18 + TypeScript
+- Vite
+- Tailwind CSS + shadcn-ui
+- React Router v6
+- Axios
+- React Hook Form + Zod
+
+## المتطلبات
+
+- Node.js (v16 أو أحدث)
+- MongoDB (v5 أو أحدث)
+- npm أو pnpm
+
+## التثبيت والتشغيل
+
+### 1. تثبيت MongoDB
+
+#### Windows:
 ```bash
-npm install
-```
+# تحميل وتثبيت MongoDB Community Server من:
+# https://www.mongodb.com/try/download/community
 
-2. Create `.env` file:
-
-```bash
-cp .env.example .env
-```
-
-3. Update `.env` with your configuration:
-
-- MongoDB connection string
-- JWT secrets
-- Admin credentials
-- Other settings
-
-4. Start MongoDB (if running locally):
-
-```bash
+# تشغيل MongoDB
 mongod
 ```
 
-5. Run the server:
+#### macOS:
+```bash
+brew tap mongodb/brew
+brew install mongodb-community
+brew services start mongodb-community
+```
 
-Development mode:
+#### Linux:
+```bash
+# Ubuntu/Debian
+sudo apt-get install mongodb
+
+# تشغيل MongoDB
+sudo systemctl start mongod
+```
+
+### 2. تثبيت Backend
 
 ```bash
+cd backend
+
+# تثبيت المكتبات
+npm install
+
+# نسخ ملف البيئة
+cp .env.example .env
+
+# تعديل ملف .env وإضافة بياناتك:
+# - MONGODB_URI (إذا كان MongoDB يعمل على منفذ مختلف)
+# - JWT_SECRET (مفتاح سري قوي)
+# - EMAIL_USER و EMAIL_APP_PASSWORD (للبريد الإلكتروني)
+
+# تشغيل Backend
 npm run dev
 ```
 
-Production mode:
+Backend سيعمل على: `http://localhost:5000`
+
+### 3. تثبيت Frontend
 
 ```bash
-npm start
+cd frontend
+
+# تثبيت المكتبات (يفضل استخدام pnpm)
+pnpm install
+# أو
+npm install
+
+# نسخ ملف البيئة
+cp .env.example .env
+
+# تشغيل Frontend
+pnpm run dev
+# أو
+npm run dev
+```
+
+Frontend سيعمل على: `http://localhost:5173`
+
+## البنية الأساسية
+
+```
+shhanli/
+├── backend/
+│   ├── config/          # إعدادات قاعدة البيانات والبريد
+│   ├── controllers/     # معالجات الطلبات
+│   ├── middleware/      # Middleware للمصادقة
+│   ├── models/          # نماذج MongoDB
+│   ├── routes/          # مسارات API
+│   ├── .env             # متغيرات البيئة
+│   └── server.js        # نقطة البداية
+│
+├── frontend/
+│   ├── src/
+│   │   ├── components/  # مكونات React
+│   │   ├── contexts/    # Context API
+│   │   ├── pages/       # صفحات التطبيق
+│   │   ├── services/    # خدمات API
+│   │   └── data/        # بيانات ثابتة (ترجمات، دول)
+│   ├── .env             # متغيرات البيئة
+│   └── vite.config.ts   # إعدادات Vite
+│
+└── README.md
 ```
 
 ## API Endpoints
 
 ### Authentication
-
-- `POST /api/auth/register` - Register new user
-- `POST /api/auth/login` - Login user
-- `GET /api/auth/me` - Get current user
-- `POST /api/auth/logout` - Logout user
-- `POST /api/auth/refresh` - Refresh access token
-
-### Users
-
-- `GET /api/users/profile` - Get user profile
-- `PUT /api/users/profile` - Update user profile
-- `PUT /api/users/change-password` - Change password
+- `POST /api/auth/register` - تسجيل مستخدم جديد
+- `POST /api/auth/login` - تسجيل الدخول
+- `POST /api/auth/logout` - تسجيل الخروج
+- `POST /api/auth/forgot-password` - طلب استعادة كلمة المرور
+- `POST /api/auth/reset-password` - إعادة تعيين كلمة المرور
+- `GET /api/auth/me` - الحصول على بيانات المستخدم الحالي
 
 ### Shipments
-
-- `POST /api/shipments` - Create shipment
-- `GET /api/shipments` - Get user shipments
-- `GET /api/shipments/:id` - Get shipment by ID
-- `GET /api/shipments/track/:trackingNumber` - Track shipment
-- `PUT /api/shipments/:id/cancel` - Cancel shipment
+- `POST /api/shipments` - إنشاء شحنة جديدة
+- `GET /api/shipments` - الحصول على شحنات المستخدم
+- `GET /api/shipments/:id` - الحصول على تفاصيل شحنة
+- `GET /api/shipments/track/:trackingNumber` - تتبع شحنة
+- `PUT /api/shipments/:id/cancel` - إلغاء شحنة
 
 ### Wallet
+- `POST /api/wallet/charge` - شحن المحفظة
+- `GET /api/wallet/transactions` - سجل المعاملات
 
-- `GET /api/wallet/balance` - Get wallet balance
-- `POST /api/wallet/deposit` - Deposit to wallet
-- `GET /api/wallet/transactions` - Get transactions
-- `GET /api/wallet/transactions/:id` - Get transaction by ID
+### Contacts
+- `POST /api/contacts` - إضافة جهة اتصال
+- `GET /api/contacts` - الحصول على جهات الاتصال
+- `PUT /api/contacts/:id` - تحديث جهة اتصال
+- `DELETE /api/contacts/:id` - حذف جهة اتصال
 
-### Admin
+## حسابات الاختبار
 
-- `GET /api/admin/stats` - Get dashboard statistics
-- `GET /api/admin/users` - Get all users
-- `PUT /api/admin/users/:id` - Update user
-- `DELETE /api/admin/users/:id` - Delete user
-- `GET /api/admin/shipments` - Get all shipments
-- `PUT /api/admin/shipments/:id/status` - Update shipment status
-- `GET /api/admin/transactions` - Get all transactions
-- `GET /api/admin/activity-logs` - Get activity logs
-- `GET /api/admin/export/excel?type=users|shipments` - Export data to Excel
+### حساب مستخدم عادي:
+```
+Email: user@test.com
+Password: User@123456
+```
 
-## Default Admin Credentials
-
+### حساب إداري:
+```
 Email: admin@kashout.com
 Password: Admin@123456
-
-**⚠️ Change these credentials in production!**
-
-## Database Models
-
-### User
-
-- name, email, phone, password
-- address, businessType, companyName
-- balance (USD, SYP)
-- role (user, admin, super-admin)
-- isActive, isVerified
-
-### Shipment
-
-- trackingNumber, userId
-- sender, receiver
-- package details
-- service type
-- cost, status
-- statusHistory
-
-### Transaction
-
-- userId, type, amount, currency
-- status, method
-- reference, relatedShipment
-- balanceBefore, balanceAfter
-
-### ActivityLog
-
-- userId, action, category
-- description, metadata
-- ipAddress, userAgent
-
-## Socket.io Events
-
-### Server to Client
-
-- `new-shipment` - New shipment created
-- `shipment-update-{userId}` - Shipment status updated
-- `new-transaction` - New transaction
-
-### Client to Server
-
-- `join-admin` - Join admin room for notifications
-
-## Environment Variables
-
 ```
+
+## الإعدادات المهمة
+
+### Backend (.env)
+```env
 PORT=5000
-NODE_ENV=development
 MONGODB_URI=mongodb://localhost:27017/kashout
-JWT_SECRET=your_secret_key
-JWT_REFRESH_SECRET=your_refresh_secret_key
-JWT_EXPIRE=24h
-JWT_REFRESH_EXPIRE=7d
-ADMIN_EMAIL=admin@kashout.com
-ADMIN_PASSWORD=Admin@123456
+JWT_SECRET=your-secret-key
 CORS_ORIGIN=http://localhost:5173
 ```
 
-## Error Handling
-
-All endpoints return consistent error responses:
-
-```json
-{
-  "success": false,
-  "message": "Error message",
-  "error": "Detailed error (development only)"
-}
+### Frontend (.env)
+```env
+VITE_API_URL=http://localhost:5000/api
 ```
 
-## Security Features
+## حل المشاكل الشائعة
 
-- Password hashing with bcrypt
-- JWT token authentication
-- Role-based access control
-- Request validation
-- CORS protection
-- Activity logging
+### 1. خطأ في الاتصال بقاعدة البيانات
+```bash
+# تأكد من تشغيل MongoDB
+mongod
 
-## License
+# أو
+brew services start mongodb-community
+```
 
-ISC
+### 2. خطأ CORS
+تأكد من أن `CORS_ORIGIN` في Backend يطابق عنوان Frontend:
+```env
+CORS_ORIGIN=http://localhost:5173
+```
+
+### 3. خطأ في تثبيت المكتبات
+```bash
+# حذف node_modules وإعادة التثبيت
+rm -rf node_modules package-lock.json
+npm install
+```
+
+### 4. خطأ في الاتصال بـ API
+تأكد من:
+- Backend يعمل على المنفذ 5000
+- Frontend يستخدم العنوان الصحيح في `.env`
+- لا يوجد Firewall يمنع الاتصال
+
+## المساهمة
+
+للمساهمة في المشروع:
+1. Fork المشروع
+2. إنشاء فرع جديد (`git checkout -b feature/amazing-feature`)
+3. Commit التغييرات (`git commit -m 'Add amazing feature'`)
+4. Push إلى الفرع (`git push origin feature/amazing-feature`)
+5. فتح Pull Request
+
+## الترخيص
+
+هذا المشروع مرخص تحت MIT License.
+
+## الدعم
+
+للدعم والاستفسارات:
+- Email: support@kashout.com
+- GitHub Issues: [Create an issue](https://github.com/naeemkashout/shhanli/issues)
+
+## ملاحظات مهمة
+
+1. **قاعدة البيانات**: تأكد من تشغيل MongoDB قبل تشغيل Backend
+2. **المنافذ**: Backend (5000) و Frontend (5173) يجب أن تكون متاحة
+3. **البريد الإلكتروني**: لاستخدام ميزة استعادة كلمة المرور، قم بتكوين بيانات البريد في `.env`
+4. **الأمان**: غيّر `JWT_SECRET` في الإنتاج إلى قيمة عشوائية قوية
+5. **الإنتاج**: استخدم متغيرات بيئة آمنة ولا تشارك ملفات `.env`
+
+## خطوات التطوير التالية
+
+- [ ] إضافة نظام الإشعارات الفورية
+- [ ] تكامل مع بوابات الدفع
+- [ ] تطبيق الجوال (React Native)
+- [ ] تقارير وإحصائيات متقدمة
+- [ ] نظام التقييمات والمراجعات
+- [ ] دعم لغات إضافية

@@ -47,6 +47,9 @@ export default function Profile() {
   const { t, language, setLanguage, isRTL } = useLanguage();
   const navigate = useNavigate();
 
+  const isPlatformOwner = ["admin", "super-admin"].includes(user?.role || "");
+  const isShippingCompanyOwner = user?.role === "company-admin";
+
   const [profileData, setProfileData] = useState({
     name: "",
     email: "",
@@ -238,36 +241,29 @@ export default function Profile() {
     }
 
     try {
-      const success = await updatePassword(
+      await updatePassword(
         passwordData.currentPassword,
         passwordData.newPassword,
       );
 
-      if (success) {
-        toast.success(
-          language === "ar"
-            ? "تم تحديث كلمة المرور بنجاح"
-            : "Password updated successfully",
-        );
-
-        // Clear password fields
-        setPasswordData({
-          currentPassword: "",
-          newPassword: "",
-          confirmNewPassword: "",
-        });
-      } else {
-        toast.error(
-          language === "ar"
-            ? "كلمة المرور الحالية غير صحيحة"
-            : "Current password is incorrect",
-        );
-      }
-    } catch (error) {
-      toast.error(
+      toast.success(
         language === "ar"
-          ? "حدث خطأ أثناء تحديث كلمة المرور"
-          : "An error occurred while updating password",
+          ? "تم تحديث كلمة المرور بنجاح"
+          : "Password updated successfully",
+      );
+
+      // Clear password fields
+      setPasswordData({
+        currentPassword: "",
+        newPassword: "",
+        confirmNewPassword: "",
+      });
+    } catch (error: any) {
+      toast.error(
+        error?.message ||
+          (language === "ar"
+            ? "حدث خطأ أثناء تحديث كلمة المرور"
+            : "An error occurred while updating password"),
       );
     }
   };
@@ -853,7 +849,15 @@ export default function Profile() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Shield className="w-5 h-5" />
-                {t("profile.security")}
+                {isPlatformOwner
+                  ? language === "ar"
+                    ? "أمان حساب مالك المنصة"
+                    : "Platform Owner Security"
+                  : isShippingCompanyOwner
+                    ? language === "ar"
+                      ? "أمان حساب شركة الشحن"
+                      : "Shipping Company Security"
+                    : t("profile.security")}
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-6">
@@ -925,7 +929,50 @@ export default function Profile() {
                 <Separator />
 
                 <div>
-                  <Label>{t("profile.changePassword")}</Label>
+                  <div
+                    className={`mb-4 rounded-lg border p-4 ${
+                      isPlatformOwner
+                        ? "border-blue-200 bg-blue-50"
+                        : isShippingCompanyOwner
+                          ? "border-amber-200 bg-amber-50"
+                          : "border-gray-200 bg-gray-50"
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      {isPlatformOwner ? (
+                        <Crown className="h-4 w-4 text-blue-700" />
+                      ) : isShippingCompanyOwner ? (
+                        <Building className="h-4 w-4 text-amber-700" />
+                      ) : (
+                        <Shield className="h-4 w-4 text-gray-700" />
+                      )}
+                      <Label className="text-sm font-semibold">
+                        {isPlatformOwner
+                          ? language === "ar"
+                            ? "تغيير كلمة مرور مالك المنصة"
+                            : "Change Platform Owner Password"
+                          : isShippingCompanyOwner
+                            ? language === "ar"
+                              ? "تغيير كلمة مرور شركة الشحن"
+                              : "Change Shipping Company Password"
+                            : t("profile.changePassword")}
+                      </Label>
+                    </div>
+                    <p className="mt-2 text-xs text-gray-600">
+                      {isPlatformOwner
+                        ? language === "ar"
+                          ? "هذا الحساب يتحكم بكل شركات الشحن وبيانات المنصة. استخدم كلمة مرور قوية وفريدة."
+                          : "This account controls all shipping companies and platform data. Use a strong unique password."
+                        : isShippingCompanyOwner
+                          ? language === "ar"
+                            ? "هذا الحساب يدير بيانات شركتك وعملاءها فقط. يفضل تغيير كلمة المرور فور استلام الحساب."
+                            : "This account manages only your company data and customers. It is recommended to change password immediately after handover."
+                          : language === "ar"
+                            ? "قم بتحديث كلمة المرور بشكل دوري للحفاظ على أمان الحساب."
+                            : "Update your password regularly to keep your account secure."}
+                    </p>
+                  </div>
+
                   <div className="grid grid-cols-1 gap-4 mt-2">
                     <div>
                       <Input
@@ -996,7 +1043,7 @@ export default function Profile() {
                     </div>
 
                     <Button
-                      variant="outline"
+                      variant={isPlatformOwner ? "default" : "outline"}
                       className="w-fit"
                       onClick={handleUpdatePassword}
                       disabled={isLoading}

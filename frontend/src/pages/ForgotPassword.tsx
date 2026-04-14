@@ -30,6 +30,7 @@ export default function ForgotPassword() {
 
   const [email, setEmail] = useState("");
   const [isEmailSent, setIsEmailSent] = useState(false);
+  const [previewUrl, setPreviewUrl] = useState("");
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -39,9 +40,24 @@ export default function ForgotPassword() {
       return;
     }
 
-    await operationStatus.executeOperation(async () => {
-      await forgotPassword({ email });
-    });
+    operationStatus.setLoading();
+
+    try {
+      const result = await forgotPassword({ email });
+      if (result.success && result.previewUrl) {
+        setPreviewUrl(result.previewUrl);
+      } else {
+        setPreviewUrl("");
+      }
+
+      if (!result.success) {
+        throw new Error(t("auth.linkSendFailed"));
+      }
+
+      operationStatus.setSuccess();
+    } catch (error: any) {
+      operationStatus.setError(error?.message || t("auth.linkSendFailed"));
+    }
   };
 
   const handleOperationSuccess = () => {
@@ -50,13 +66,37 @@ export default function ForgotPassword() {
     toast.success(t("auth.resetLinkSent"));
   };
 
-  const handleOperationRetry = () => {
-    handleSubmit({ preventDefault: () => {} } as React.FormEvent);
+  const handleOperationRetry = async () => {
+    if (!email.trim()) {
+      toast.error(t("auth.enterEmail"));
+      operationStatus.setError(t("auth.enterEmail"));
+      return;
+    }
+
+    operationStatus.setLoading();
+
+    try {
+      const result = await forgotPassword({ email });
+      if (result.success && result.previewUrl) {
+        setPreviewUrl(result.previewUrl);
+      } else {
+        setPreviewUrl("");
+      }
+
+      if (!result.success) {
+        throw new Error(t("auth.linkSendFailed"));
+      }
+
+      operationStatus.setSuccess();
+    } catch (error: any) {
+      operationStatus.setError(error?.message || t("auth.linkSendFailed"));
+    }
   };
 
   const handleSendAgain = () => {
     setIsEmailSent(false);
     setEmail("");
+    setPreviewUrl("");
   };
 
   return (
@@ -138,6 +178,15 @@ export default function ForgotPassword() {
                   <p className="text-sm text-gray-500">
                     {t("auth.didntReceiveEmail")}
                   </p>
+                  {previewUrl && (
+                    <Button
+                      onClick={() => window.open(previewUrl, "_blank")}
+                      variant="secondary"
+                      className="w-full"
+                    >
+                      فتح رابط الرسالة التجريبية
+                    </Button>
+                  )}
                   <Button
                     onClick={handleSendAgain}
                     variant="outline"
@@ -168,7 +217,7 @@ export default function ForgotPassword() {
         title={t("auth.resetPassword")}
         loadingMessage={t("auth.sendingResetLink")}
         successMessage={t("auth.linkSentSuccess")}
-        errorMessage={t("auth.linkSendFailed")}
+        errorMessage={operationStatus.errorMessage || t("auth.linkSendFailed")}
         onRetry={handleOperationRetry}
         onContinue={handleOperationSuccess}
         onClose={() => operationStatus.reset()}

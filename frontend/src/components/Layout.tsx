@@ -4,21 +4,28 @@ import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { Input } from "@/components/ui/input";
 import {
+  Bell,
   Package,
   Home,
   Truck,
+  Building2,
   Plus,
   Users,
   CreditCard,
+  ScrollText,
   User,
   Search,
   Menu,
   LogOut,
   Globe,
   X,
+  Info,
+  MessageCircle,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useLanguage } from "@/contexts/LanguageContext";
+import notificationService from "@/services/notificationService";
+import { io, Socket } from "socket.io-client";
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -33,6 +40,104 @@ export default function Layout({ children }: LayoutProps) {
   const [open, setOpen] = useState(false);
 
   const [confirmLogout, setConfirmLogout] = useState(false);
+  const [unreadNotifications, setUnreadNotifications] = useState(0);
+
+  const playNotificationSound = () => {
+    try {
+      const AudioContextClass =
+        window.AudioContext ||
+        (window as typeof window & { webkitAudioContext?: typeof AudioContext })
+          .webkitAudioContext;
+
+      if (!AudioContextClass) return;
+
+      const audioContext = new AudioContextClass();
+      const oscillator = audioContext.createOscillator();
+      const gainNode = audioContext.createGain();
+
+      oscillator.type = "sine";
+      oscillator.frequency.setValueAtTime(880, audioContext.currentTime);
+      gainNode.gain.setValueAtTime(0.0001, audioContext.currentTime);
+      gainNode.gain.exponentialRampToValueAtTime(
+        0.08,
+        audioContext.currentTime + 0.02,
+      );
+      gainNode.gain.exponentialRampToValueAtTime(
+        0.0001,
+        audioContext.currentTime + 0.25,
+      );
+
+      oscillator.connect(gainNode);
+      gainNode.connect(audioContext.destination);
+      oscillator.start(audioContext.currentTime);
+      oscillator.stop(audioContext.currentTime + 0.26);
+
+      oscillator.onended = () => {
+        audioContext.close().catch(() => {
+          // Ignore close errors.
+        });
+      };
+    } catch (error) {
+      // Ignore sound playback errors (browser autoplay restrictions, etc.)
+    }
+  };
+
+  useEffect(() => {
+    const loadUnread = async () => {
+      try {
+        const count = await notificationService.getUnreadCount();
+        setUnreadNotifications(count);
+      } catch (error) {
+        // Silent fail for optional header badge.
+      }
+    };
+
+    loadUnread();
+  }, [location.pathname]);
+
+  useEffect(() => {
+    const userId = String(user?.id || "").trim();
+    if (!userId) return;
+
+    const apiBaseUrl =
+      import.meta.env.VITE_API_URL || "http://localhost:5001/api";
+    const socketUrl = apiBaseUrl.replace(/\/api\/?$/, "");
+
+    const socket: Socket = io(socketUrl, {
+      transports: ["websocket", "polling"],
+      withCredentials: true,
+    });
+
+    socket.on("connect", () => {
+      socket.emit("join-user-room", userId);
+    });
+
+    socket.on("new-notification", () => {
+      setUnreadNotifications((prev) => prev + 1);
+      playNotificationSound();
+    });
+
+    const onNotificationsSync = (event: Event) => {
+      const customEvent = event as CustomEvent<{ unreadCount?: number }>;
+      const nextUnreadCount = Number(customEvent?.detail?.unreadCount);
+      if (Number.isFinite(nextUnreadCount) && nextUnreadCount >= 0) {
+        setUnreadNotifications(nextUnreadCount);
+      }
+    };
+
+    window.addEventListener(
+      "notifications:sync",
+      onNotificationsSync as EventListener,
+    );
+
+    return () => {
+      window.removeEventListener(
+        "notifications:sync",
+        onNotificationsSync as EventListener,
+      );
+      socket.disconnect();
+    };
+  }, [user?.id]);
 
   // Force close drawer when route changes
   useEffect(() => {
@@ -72,6 +177,11 @@ export default function Layout({ children }: LayoutProps) {
       icon: Truck,
     },
     {
+      name: t("nav.companies"),
+      href: "/companies",
+      icon: Building2,
+    },
+    {
       name: t("nav.contacts"),
       href: "/contacts",
       icon: Users,
@@ -81,6 +191,25 @@ export default function Layout({ children }: LayoutProps) {
       href: "/balance",
       icon: CreditCard,
     },
+    // {
+    //   name: t("nav.notifications"),
+    //   href: "/notifications",
+    //   icon: Bell,
+    // },
+    {
+      name: t("nav.financialTransactions"),
+      href: "/financial-transactions",
+      icon: ScrollText,
+    },
+    ...(["admin", "super-admin", "company-admin"].includes(user?.role || "")
+      ? [
+          {
+            name: "لوحة التحكم",
+            href: "/admin",
+            icon: User,
+          },
+        ]
+      : []),
     // {
     //   name: t("nav.profile"),
     //   href: "/profile",
@@ -111,7 +240,7 @@ export default function Layout({ children }: LayoutProps) {
     >
       {/* Top Navigation Bar */}
       <div className="bg-white border-b border-gray-200 sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-3 sm:px-4 lg:px-8">
+        <div className="w-full px-2 sm:px-3 lg:px-4">
           <div className="flex items-center justify-between h-14 sm:h-16">
             {/* Logo */}
             <div className="flex items-center gap-2 sm:gap-3">
@@ -124,7 +253,13 @@ export default function Layout({ children }: LayoutProps) {
             </div>
 
             {/* Desktop Navigation - Show on large screens */}
-            <div className="hidden lg:flex items-center space-x-6 xl:space-x-8 space-x-reverse">
+            <div
+              className={`hidden lg:flex items-center ${
+                isRTL
+                  ? "space-x-6 xl:space-x-8 space-x-reverse"
+                  : "space-x-3 xl:space-x-4"
+              }`}
+            >
               {navigationItems.map((item) => {
                 const Icon = item.icon;
                 const isActive = location.pathname === item.href;
@@ -160,6 +295,25 @@ export default function Layout({ children }: LayoutProps) {
                   {language === "ar" ? "EN" : "AR"}
                 </span>
               </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => navigate("/notifications")}
+                className={`relative min-h-[44px] min-w-[44px] p-2 rounded-full border transition-colors ${
+                  unreadNotifications > 0
+                    ? "border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100"
+                    : "border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100"
+                }`}
+                aria-label={language === "ar" ? "الإشعارات" : "Notifications"}
+                title={language === "ar" ? "الإشعارات" : "Notifications"}
+              >
+                <Bell className="w-5 h-5" />
+                {unreadNotifications > 0 && (
+                  <span className="absolute -top-1.5 -right-1.5 min-w-[20px] h-[20px] rounded-full bg-red-600 text-white text-[10px] font-semibold flex items-center justify-center px-1 shadow-sm border border-white">
+                    {unreadNotifications > 99 ? "99+" : unreadNotifications}
+                  </span>
+                )}
+              </Button>
               {/* User Menu - Show on desktop only */}
               <div className="relative">
                 <div
@@ -186,25 +340,59 @@ export default function Layout({ children }: LayoutProps) {
                   <div
                     className={`absolute top-12 ${
                       isRTL ? "right-0" : "left-0"
-                    } w-40 bg-white shadow-lg rounded-md border p-2`}
+                    } w-56 bg-white shadow-lg rounded-md border p-2`}
                   >
                     <button
-                      className="w-full text-left px-3 py-2 hover:bg-gray-100 rounded"
+                      className={`w-full flex items-center gap-2 px-3 py-2 hover:bg-gray-100 rounded ${
+                        isRTL ? "text-right" : "text-left"
+                      }`}
                       onClick={() => {
                         setOpen(false);
                         navigate("/profile");
                       }}
                     >
+                      <User className="w-4 h-4 text-gray-500" />
                       {language === "ar" ? "الملف الشخصي" : "Profile"}
                     </button>
 
                     <button
-                      className="w-full text-left px-3 py-2 hover:bg-gray-100 rounded text-red-600"
+                      className={`w-full flex items-center gap-2 px-3 py-2 hover:bg-gray-100 rounded ${
+                        isRTL ? "text-right" : "text-left"
+                      }`}
+                      onClick={() => {
+                        setOpen(false);
+                        navigate("/about-us");
+                      }}
+                    >
+                      <Info className="w-4 h-4 text-gray-500" />
+                      {language === "ar" ? "من نحن" : "About Us"}
+                    </button>
+
+                    <button
+                      className={`w-full flex items-center gap-2 px-3 py-2 hover:bg-gray-100 rounded ${
+                        isRTL ? "text-right" : "text-left"
+                      }`}
+                      onClick={() => {
+                        setOpen(false);
+                        navigate("/contact-us");
+                      }}
+                    >
+                      <MessageCircle className="w-4 h-4 text-gray-500" />
+                      {language === "ar" ? "تواصل معنا" : "Contact Us"}
+                    </button>
+
+                    <div className="my-1 h-px bg-gray-100" />
+
+                    <button
+                      className={`w-full flex items-center gap-2 px-3 py-2 hover:bg-red-50 rounded text-red-600 ${
+                        isRTL ? "text-right" : "text-left"
+                      }`}
                       onClick={() => {
                         setOpen(false);
                         setConfirmLogout(true); // show dialog
                       }}
                     >
+                      <LogOut className="w-4 h-4" />
                       {language === "ar" ? "تسجيل الخروج" : "Logout"}
                     </button>
                   </div>
@@ -353,7 +541,7 @@ export default function Layout({ children }: LayoutProps) {
       </div>
 
       {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-3 sm:px-4 lg:px-8 py-4 sm:py-6 lg:py-8">
+      <main className="w-full px-2 sm:px-3 lg:px-4 py-4 sm:py-6 lg:py-8">
         {children}
       </main>
     </div>

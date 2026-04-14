@@ -1,9 +1,13 @@
 import React, { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import {
+  Ban,
   Users,
   Package,
   DollarSign,
+  HandCoins,
   TrendingUp,
   Clock,
   CheckCircle,
@@ -11,9 +15,19 @@ import {
 } from "lucide-react";
 import adminService from "@/services/adminService";
 import { toast } from "sonner";
+import { useAuth } from "@/contexts/AuthContext";
+import { useLanguage } from "@/contexts/LanguageContext";
 
 export default function AdminDashboard() {
+  const { language } = useLanguage();
+  const tr = (ar: string, en: string) => (language === "ar" ? ar : en);
+  const navigate = useNavigate();
+  const { user } = useAuth();
+  const isPlatformAdmin = ["admin", "super-admin"].includes(user?.role || "");
   const [stats, setStats] = useState<any>(null);
+  const [cancellationRequests, setCancellationRequests] = useState<any[]>([]);
+  const [pendingCancellationCount, setPendingCancellationCount] = useState(0);
+  const [isCancellationLoading, setIsCancellationLoading] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [period, setPeriod] = useState("30");
 
@@ -26,8 +40,30 @@ export default function AdminDashboard() {
       setIsLoading(true);
       const data = await adminService.getDashboardStats(period);
       setStats(data);
+
+      if (!isPlatformAdmin) {
+        try {
+          setIsCancellationLoading(true);
+          const response = await adminService.getCancellationRequests({
+            status: "pending",
+            page: 1,
+            limit: 5,
+          });
+          setCancellationRequests(response?.data || []);
+          setPendingCancellationCount(Number(response?.pagination?.total || 0));
+        } catch {
+          // Keep dashboard usable even when cancellation requests fail.
+          setCancellationRequests([]);
+          setPendingCancellationCount(0);
+        } finally {
+          setIsCancellationLoading(false);
+        }
+      }
     } catch (error: any) {
-      toast.error(error.message || "فشل تحميل الإحصائيات");
+      toast.error(
+        error.message ||
+          tr("فشل تحميل الإحصائيات", "Failed to load dashboard statistics"),
+      );
     } finally {
       setIsLoading(false);
     }
@@ -44,44 +80,103 @@ export default function AdminDashboard() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold text-gray-900">
-          لوحة التحكم الإدارية
-        </h1>
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900">
+            {isPlatformAdmin
+              ? tr("لوحة تحكم مالك المنصة", "Platform Owner Dashboard")
+              : tr("لوحة تحكم شركة الشحن", "Shipping Company Dashboard")}
+          </h1>
+          <p className="mt-1 text-sm text-gray-500">
+            {stats?.currentCompany?.name
+              ? tr(
+                  `نطاق العرض: ${stats.currentCompany.name}`,
+                  `Scope: ${stats.currentCompany.name}`,
+                )
+              : tr(
+                  "إحصائيات جميع شركات الشحن والمستخدمين في المنصة.",
+                  "Statistics for all shipping companies and users on the platform.",
+                )}
+          </p>
+        </div>
         <select
           value={period}
           onChange={(e) => setPeriod(e.target.value)}
           className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
         >
-          <option value="7">آخر 7 أيام</option>
-          <option value="30">آخر 30 يوم</option>
-          <option value="90">آخر 90 يوم</option>
+          <option value="7">{tr("آخر 7 أيام", "Last 7 days")}</option>
+          <option value="30">{tr("آخر 30 يوم", "Last 30 days")}</option>
+          <option value="90">{tr("آخر 90 يوم", "Last 90 days")}</option>
         </select>
       </div>
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {/* Total Users */}
-        <Card className="hover:shadow-lg transition-shadow">
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-600">
-                  إجمالي المستخدمين
-                </p>
-                <p className="text-3xl font-bold text-gray-900 mt-2">
-                  {stats?.users?.total || 0}
-                </p>
-                <p className="text-sm text-green-600 mt-1">
-                  <TrendingUp className="w-4 h-4 inline mr-1" />+
-                  {stats?.users?.new || 0} جديد
-                </p>
+        {isPlatformAdmin ? (
+          <Card className="hover:shadow-lg transition-shadow">
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-600">
+                    شركات الشحن
+                  </p>
+                  <p className="text-3xl font-bold text-gray-900 mt-2">
+                    {stats?.companies?.total || 0}
+                  </p>
+                  <p className="text-sm text-green-600 mt-1">
+                    <TrendingUp className="w-4 h-4 inline mr-1" />
+                    {stats?.companies?.active || 0} مفعلة
+                  </p>
+                </div>
+                <div className="p-3 bg-slate-100 rounded-full">
+                  <Users className="w-8 h-8 text-slate-700" />
+                </div>
               </div>
-              <div className="p-3 bg-blue-100 rounded-full">
-                <Users className="w-8 h-8 text-blue-600" />
+            </CardContent>
+          </Card>
+        ) : (
+          <Card className="hover:shadow-lg transition-shadow">
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-600">شركتي</p>
+                  <p className="text-xl font-bold text-gray-900 mt-2 truncate">
+                    {stats?.currentCompany?.name || "-"}
+                  </p>
+                  <p className="text-sm text-gray-600 mt-1">
+                    الكود: {stats?.currentCompany?.code || "-"}
+                  </p>
+                </div>
+                <div className="p-3 bg-slate-100 rounded-full">
+                  <Users className="w-8 h-8 text-slate-700" />
+                </div>
               </div>
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        )}
+
+        {isPlatformAdmin && (
+          <Card className="hover:shadow-lg transition-shadow">
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-600">
+                    إجمالي المستخدمين
+                  </p>
+                  <p className="text-3xl font-bold text-gray-900 mt-2">
+                    {stats?.users?.total || 0}
+                  </p>
+                  <p className="text-sm text-green-600 mt-1">
+                    <TrendingUp className="w-4 h-4 inline mr-1" />+
+                    {stats?.users?.new || 0} جديد
+                  </p>
+                </div>
+                <div className="p-3 bg-blue-100 rounded-full">
+                  <Users className="w-8 h-8 text-blue-600" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Total Shipments */}
         <Card className="hover:shadow-lg transition-shadow">
@@ -127,6 +222,32 @@ export default function AdminDashboard() {
           </CardContent>
         </Card>
 
+        {!isPlatformAdmin && (
+          <Card className="hover:shadow-lg transition-shadow">
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-600">
+                    طلبات الإلغاء
+                  </p>
+                  <p className="text-3xl font-bold text-gray-900 mt-2">
+                    {isCancellationLoading ? "..." : pendingCancellationCount}
+                  </p>
+                  <p className="text-sm text-red-600 mt-1">
+                    <Ban className="w-4 h-4 inline mr-1" />
+                    {pendingCancellationCount > 0
+                      ? tr("قيد المراجعة الآن", "Pending review now")
+                      : tr("لا توجد طلبات حالياً", "No active requests")}
+                  </p>
+                </div>
+                <div className="p-3 bg-red-100 rounded-full">
+                  <Ban className="w-8 h-8 text-red-600" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         {/* Revenue */}
         <Card className="hover:shadow-lg transition-shadow">
           <CardContent className="p-6">
@@ -144,12 +265,104 @@ export default function AdminDashboard() {
                 <DollarSign className="w-8 h-8 text-green-600" />
               </div>
             </div>
+            {isPlatformAdmin && (
+              <div className="mt-4">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => navigate("/admin/revenue-analytics")}
+                >
+                  {tr("فتح التحليل الموسع", "Open Detailed Analysis")}
+                </Button>
+              </div>
+            )}
           </CardContent>
         </Card>
+
+        {isPlatformAdmin && (
+          <Card
+            className="hover:shadow-lg transition-shadow cursor-pointer"
+            onClick={() => navigate("/admin/withdrawal-requests")}
+          >
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-600">
+                    طلبات سحب الرصيد
+                  </p>
+                  <p className="text-3xl font-bold text-gray-900 mt-2">
+                    {stats?.withdrawalRequests?.pending || 0}
+                  </p>
+                  <p className="text-sm text-gray-600 mt-1">
+                    $
+                    {stats?.withdrawalRequests?.pendingAmountUSD?.toFixed(2) ||
+                      0}
+                  </p>
+                  <p className="text-sm text-gray-600 mt-1">
+                    {stats?.withdrawalRequests?.pendingAmountSYP?.toLocaleString() ||
+                      0}{" "}
+                    ل.س
+                  </p>
+                </div>
+                <div className="p-3 bg-orange-100 rounded-full">
+                  <HandCoins className="w-8 h-8 text-orange-600" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
       </div>
 
       {/* Shipment Status Breakdown */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {isPlatformAdmin ? (
+          <Card>
+            <CardHeader>
+              <CardTitle>ملخص الشركات</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {stats?.companies?.items?.map((company: any) => (
+                  <div
+                    key={company._id}
+                    className="flex items-center justify-between rounded-lg border border-gray-200 p-4"
+                  >
+                    <div>
+                      <p className="font-medium text-gray-900">
+                        {company.name}
+                      </p>
+                      <p className="text-xs text-gray-500">{company.code}</p>
+                    </div>
+                    <div className="text-sm text-gray-600 text-right">
+                      <p>المستخدمون: {company.usersCount || 0}</p>
+                      <p>الشحنات: {company.shipmentsCount || 0}</p>
+                    </div>
+                  </div>
+                ))}
+                {(!stats?.companies?.items ||
+                  stats.companies.items.length === 0) && (
+                  <p className="text-center text-gray-500 py-4">
+                    لا توجد شركات بعد
+                  </p>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        ) : (
+          <Card>
+            <CardHeader>
+              <CardTitle>معلومات الشركة</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3 text-sm text-gray-700">
+                <p>اسم الشركة: {stats?.currentCompany?.name || "-"}</p>
+                <p>الكود: {stats?.currentCompany?.code || "-"}</p>
+                <p>عدد الشحنات: {stats?.shipments?.total || 0}</p>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         <Card>
           <CardHeader>
             <CardTitle>حالة الشحنات</CardTitle>
@@ -187,39 +400,89 @@ export default function AdminDashboard() {
           </CardContent>
         </Card>
 
-        {/* Recent Activities */}
-        <Card>
-          <CardHeader>
-            <CardTitle>النشاطات الأخيرة</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              {stats?.recentActivities?.slice(0, 5).map((activity: any) => (
-                <div
-                  key={activity._id}
-                  className="flex items-start gap-3 p-3 bg-gray-50 rounded-lg"
-                >
-                  <Activity className="w-5 h-5 text-gray-600 mt-0.5" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-gray-900 truncate">
-                      {activity.description}
-                    </p>
-                    <p className="text-xs text-gray-600 mt-1">
-                      {activity.userId?.name || "مستخدم"} •{" "}
-                      {new Date(activity.createdAt).toLocaleString("ar-SY")}
-                    </p>
+        {isPlatformAdmin ? (
+          <Card>
+            <CardHeader>
+              <CardTitle>النشاطات الأخيرة</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {stats?.recentActivities?.slice(0, 5).map((activity: any) => (
+                  <div
+                    key={activity._id}
+                    className="flex items-start gap-3 p-3 bg-gray-50 rounded-lg"
+                  >
+                    <Activity className="w-5 h-5 text-gray-600 mt-0.5" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-gray-900 truncate">
+                        {activity.description}
+                      </p>
+                      <p className="text-xs text-gray-600 mt-1">
+                        {activity.userId?.name || "مستخدم"} •{" "}
+                        {new Date(activity.createdAt).toLocaleString("ar-SY")}
+                      </p>
+                    </div>
                   </div>
+                ))}
+                {(!stats?.recentActivities ||
+                  stats.recentActivities.length === 0) && (
+                  <p className="text-center text-gray-500 py-4">
+                    لا توجد نشاطات حديثة
+                  </p>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        ) : (
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between gap-3">
+                <CardTitle>طلبات الإلغاء</CardTitle>
+                {pendingCancellationCount > 0 && (
+                  <span className="inline-flex min-w-6 h-6 items-center justify-center rounded-full bg-red-600 px-2 text-xs font-bold text-white">
+                    {pendingCancellationCount > 99
+                      ? "99+"
+                      : pendingCancellationCount}
+                  </span>
+                )}
+              </div>
+            </CardHeader>
+            <CardContent>
+              {isCancellationLoading ? (
+                <div className="flex justify-center py-8">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
                 </div>
-              ))}
-              {(!stats?.recentActivities ||
-                stats.recentActivities.length === 0) && (
-                <p className="text-center text-gray-500 py-4">
-                  لا توجد نشاطات حديثة
-                </p>
+              ) : (
+                <div className="space-y-3">
+                  {cancellationRequests.map((request: any) => (
+                    <div
+                      key={request._id}
+                      className="flex items-start gap-3 rounded-lg border border-gray-200 p-3"
+                    >
+                      <Clock className="w-5 h-5 text-orange-600 mt-0.5" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-gray-900">
+                          الشحنة: {request.trackingNumber || "-"}
+                        </p>
+                        <p className="text-xs text-gray-600 mt-1 truncate">
+                          {request.userId?.name || "مستخدم"}
+                        </p>
+                        <p className="text-xs text-gray-500 mt-1 truncate">
+                          {request.cancellationRequest?.reason || "بدون سبب"}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                  {cancellationRequests.length === 0 && (
+                    <p className="text-center text-gray-500 py-4">
+                      لا توجد طلبات إلغاء قيد المراجعة
+                    </p>
+                  )}
+                </div>
               )}
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        )}
       </div>
     </div>
   );

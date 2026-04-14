@@ -1,4 +1,5 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useMemo } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -23,51 +24,51 @@ import { Label } from "@/components/ui/label";
 import {
   Package,
   Search,
-  Filter,
   Eye,
   Printer,
   Download,
-  MapPin,
-  Calendar,
-  User,
   Truck,
   Clock,
   CheckCircle,
   AlertCircle,
   X,
   AlertTriangle,
-  MoreVertical,
   ExternalLink,
+  User,
 } from "lucide-react";
 import { useLanguage } from "@/contexts/LanguageContext";
+import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 import jsPDF from "jspdf";
 import "jspdf-autotable";
+import shipmentService from "@/services/shipmentService";
+import shippingCompanyService from "@/services/shippingCompanyService";
+import { io, Socket } from "socket.io-client";
 
 interface Shipment {
-  id: string;
+  _id: string;
   trackingNumber: string;
   sender: {
-    senderName: string;
-    senderPhone: string;
-    senderEmail: string;
-    senderCountry: string;
-    senderState: string;
-    senderCity: string;
-    senderStreet: string;
-    senderType: "individual" | "merchant";
-    senderCompanyName?: string;
-    senderCommercialRegister?: string;
+    name: string;
+    phone: string;
+    email: string;
+    country: string;
+    state: string;
+    city: string;
+    street: string;
+    clientType: "individual" | "merchant";
+    companyName?: string;
+    commercialRegister?: string;
   };
-  receiver: {
-    receiverName: string;
-    receiverPhone: string;
-    receiverEmail: string;
-    receiverCountry: string;
-    receiverState: string;
-    receiverCity: string;
-    receiverStreet: string;
-  };
+  receivers: Array<{
+    name: string;
+    phone: string;
+    email?: string;
+    country: string;
+    state: string;
+    city: string;
+    street: string;
+  }>;
   package: {
     type: string;
     weight: number;
@@ -75,38 +76,66 @@ interface Shipment {
     value: number;
     currency: string;
   };
-  status: "pending" | "in-transit" | "delivered" | "cancelled";
-  company: string;
-  cost: number;
+  status:
+    | "pending"
+    | "confirmed"
+    | "picked-up"
+    | "in-transit"
+    | "out-for-delivery"
+    | "delivered"
+    | "cancelled"
+    | "returned";
+  shippingCompany: {
+    id: string;
+    name: string;
+    logoUrl?: string;
+    trackingUrlTemplate?: string;
+  };
+  statusHistory?: Array<{
+    status: string;
+    note?: string;
+    location?: string;
+    timestamp?: string;
+  }>;
+  cost: {
+    amount: number;
+    currency: string;
+    paymentMethod: string;
+  };
+  cancellationRequest?: {
+    isRequested?: boolean;
+    reason?: string;
+    status?: "pending" | "approved" | "rejected" | null;
+    reviewNote?: string;
+  };
+  weightAdjustment?: {
+    isAdjusted?: boolean;
+    originalWeight?: number;
+    correctedWeight?: number;
+    note?: string;
+    adjustedAt?: string;
+    balanceDeduction?: {
+      required?: boolean;
+      amount?: number;
+      currency?: string;
+      status?: "not-required" | "deducted" | "insufficient-cancelled";
+      note?: string;
+    };
+  };
   createdAt: string;
-  estimatedDelivery: string;
-  paymentMethod: string;
+  estimatedDelivery?: string;
 }
 
 export default function Shipments() {
   const { t, isRTL, language } = useLanguage();
+  const { user } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const [shipments, setShipments] = useState<Shipment[]>([]);
   const [loading, setLoading] = useState(true);
-
-  // Load shipments from API
-  React.useEffect(() => {
-    const loadShipments = async () => {
-      try {
-        // TODO: Implement API call to get user's shipments
-        // For now, show empty state
-        setShipments([]);
-      } catch (error) {
-        console.error("Error loading shipments:", error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    loadShipments();
-  }, []);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [companyFilter, setCompanyFilter] = useState<string>("all");
   const [dateFrom, setDateFrom] = useState<string>("");
   const [dateTo, setDateTo] = useState<string>("");
   const [selectedShipment, setSelectedShipment] = useState<Shipment | null>(
@@ -116,17 +145,206 @@ export default function Shipments() {
   const [isPrintDialogOpen, setIsPrintDialogOpen] = useState(false);
   const [isCancelDialogOpen, setIsCancelDialogOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
+  const [notifiedWeightAdjustments, setNotifiedWeightAdjustments] = useState<
+    Set<string>
+  >(new Set());
+  const [companyLogosById, setCompanyLogosById] = useState<
+    Record<string, string>
+  >({});
+
+  // Load shipments from API
+  useEffect(() => {
+    const loadShipments = async () => {
+      try {
+        setLoading(true);
+        const response = await shipmentService.getUserShipments({
+          status: statusFilter === "all" ? undefined : statusFilter,
+          page: 1,
+          limit: 100,
+        });
+
+        if (response.success && response.data) {
+          setShipments(response.data);
+        }
+      } catch (error: any) {
+        console.error("Error loading shipments:", error);
+        toast.error(
+          language === "ar"
+            ? "حدث خطأ في تحميل الشحنات"
+            : "Error loading shipments",
+        );
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadShipments();
+  }, [statusFilter, language]);
+
+  useEffect(() => {
+    const loadCompanyLogos = async () => {
+      try {
+        const companies = await shippingCompanyService.getShippingCompanies();
+        const logosMap = (companies || []).reduce(
+          (acc: Record<string, string>, company: any) => {
+            if (company?._id && company?.logoUrl) {
+              acc[String(company._id)] = String(company.logoUrl);
+            }
+            return acc;
+          },
+          {},
+        );
+        setCompanyLogosById(logosMap);
+      } catch {
+        setCompanyLogosById({});
+      }
+    };
+
+    loadCompanyLogos();
+  }, []);
+
+  const getCompanyLogoForShipment = (shipment: Shipment) => {
+    if (shipment.shippingCompany?.logoUrl)
+      return shipment.shippingCompany.logoUrl;
+    return companyLogosById[String(shipment.shippingCompany?.id || "")] || "";
+  };
+
+  useEffect(() => {
+    const userId = String(user?.id || "").trim();
+    if (!userId) return;
+
+    const apiBaseUrl =
+      import.meta.env.VITE_API_URL || "http://localhost:5001/api";
+    const socketUrl = apiBaseUrl.replace(/\/api\/?$/, "");
+
+    const socket: Socket = io(socketUrl, {
+      transports: ["websocket", "polling"],
+      withCredentials: true,
+    });
+
+    socket.on("connect", () => {
+      socket.emit("join-user-room", userId);
+    });
+
+    socket.on("shipment-weight-adjusted", (payload: any) => {
+      if (String(payload?.userId || "") !== userId) return;
+
+      if (payload?.wasCancelledForInsufficientBalance) {
+        toast.error(
+          language === "ar"
+            ? `تم إلغاء الشحنة ${payload?.trackingNumber || ""} بسبب عدم كفاية الرصيد بعد تعديل الوزن`
+            : `Shipment ${payload?.trackingNumber || ""} was cancelled due to insufficient balance after weight adjustment`,
+        );
+      } else if (
+        payload?.deductionStatus === "deducted" &&
+        Number(payload?.additionalAmount || 0) > 0
+      ) {
+        toast.info(
+          language === "ar"
+            ? `تم تعديل وزن الشحنة ${payload?.trackingNumber || ""} وخصم ${Number(payload?.additionalAmount || 0).toLocaleString("ar-SY")} ${payload?.currency || ""} من رصيدك`
+            : `Shipment ${payload?.trackingNumber || ""} was weight-adjusted and ${Number(payload?.additionalAmount || 0).toFixed(2)} ${payload?.currency || ""} was deducted from your wallet`,
+        );
+      } else {
+        toast.info(
+          language === "ar"
+            ? `تم تعديل وزن الشحنة ${payload?.trackingNumber || ""}`
+            : `Shipment ${payload?.trackingNumber || ""} weight was adjusted`,
+        );
+      }
+
+      setShipments((prev) =>
+        prev.map((shipment) =>
+          shipment._id === payload?.shipmentId
+            ? {
+                ...shipment,
+                status: payload?.wasCancelledForInsufficientBalance
+                  ? "cancelled"
+                  : shipment.status,
+                weightAdjustment: {
+                  ...(shipment.weightAdjustment || {}),
+                  isAdjusted: true,
+                  originalWeight: payload?.originalWeight,
+                  correctedWeight: payload?.correctedWeight,
+                  balanceDeduction: {
+                    ...(shipment.weightAdjustment?.balanceDeduction || {}),
+                    required: Number(payload?.additionalAmount || 0) > 0,
+                    amount: Number(payload?.additionalAmount || 0),
+                    currency: payload?.currency || shipment.cost?.currency,
+                    status: payload?.deductionStatus || "not-required",
+                  },
+                },
+              }
+            : shipment,
+        ),
+      );
+    });
+
+    return () => {
+      socket.disconnect();
+    };
+  }, [user?.id, language]);
+
+  useEffect(() => {
+    const adjusted = shipments.filter(
+      (shipment) => shipment.weightAdjustment?.isAdjusted,
+    );
+    if (!adjusted.length) return;
+
+    const newIds = adjusted
+      .map((shipment) => shipment._id)
+      .filter((id) => !notifiedWeightAdjustments.has(id));
+
+    if (!newIds.length) return;
+
+    const count = newIds.length;
+    toast.info(
+      language === "ar"
+        ? `لديك ${count} شحنة تم تعديل وزنها من شركة الشحن`
+        : `You have ${count} shipment(s) with adjusted weight`,
+    );
+
+    setNotifiedWeightAdjustments((prev) => {
+      const next = new Set(prev);
+      newIds.forEach((id) => next.add(id));
+      return next;
+    });
+  }, [shipments, language, notifiedWeightAdjustments]);
+
+  useEffect(() => {
+    const shipmentId = String(searchParams.get("shipmentId") || "").trim();
+    if (!shipmentId || !shipments.length) return;
+
+    const matchedShipment = shipments.find(
+      (shipment) => shipment._id === shipmentId,
+    );
+    if (!matchedShipment) return;
+
+    setSelectedShipment(matchedShipment);
+    setIsDetailsOpen(true);
+
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.delete("shipmentId");
+    setSearchParams(nextParams, { replace: true });
+  }, [shipments, searchParams, setSearchParams]);
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case "delivered":
-        return "bg-green-100 text-green-800";
+      case "pending":
+        return "bg-amber-100 text-amber-800";
+      case "confirmed":
+        return "bg-sky-100 text-sky-800";
+      case "picked-up":
+        return "bg-violet-100 text-violet-800";
       case "in-transit":
         return "bg-blue-100 text-blue-800";
-      case "pending":
-        return "bg-orange-100 text-orange-800";
+      case "out-for-delivery":
+        return "bg-fuchsia-100 text-fuchsia-800";
+      case "delivered":
+        return "bg-green-100 text-green-800";
       case "cancelled":
         return "bg-red-100 text-red-800";
+      case "returned":
+        return "bg-slate-200 text-slate-800";
       default:
         return "bg-gray-100 text-gray-800";
     }
@@ -134,6 +352,12 @@ export default function Shipments() {
 
   const getStatusIcon = (status: string) => {
     switch (status) {
+      case "confirmed":
+        return <CheckCircle className="w-4 h-4" />;
+      case "picked-up":
+        return <Package className="w-4 h-4" />;
+      case "out-for-delivery":
+        return <ExternalLink className="w-4 h-4" />;
       case "delivered":
         return <CheckCircle className="w-4 h-4" />;
       case "in-transit":
@@ -142,38 +366,38 @@ export default function Shipments() {
         return <Clock className="w-4 h-4" />;
       case "cancelled":
         return <AlertCircle className="w-4 h-4" />;
+      case "returned":
+        return <AlertTriangle className="w-4 h-4" />;
       default:
         return <Package className="w-4 h-4" />;
     }
   };
 
-  // Get tracking URL based on shipping company
-  const getTrackingUrl = (company: string, trackingNumber: string) => {
-    const companyName = company.toLowerCase();
+  const getTrackingUrl = (shipment: Shipment) => {
+    const trackingNumber = String(shipment.trackingNumber || "").trim();
+    const template = String(
+      shipment.shippingCompany?.trackingUrlTemplate || "",
+    ).trim();
 
-    if (companyName.includes("aramex") || companyName.includes("أرامكس")) {
-      return `https://www.aramex.com/us/en/track/shipments?ShipmentNumber=${trackingNumber}`;
-    } else if (companyName.includes("dhl")) {
-      return `https://www.dhl.com/global-en/home/tracking.html?tracking-id=${trackingNumber}`;
-    } else if (companyName.includes("fedex")) {
-      return `https://www.fedex.com/fedextrack/?trknbr=${trackingNumber}`;
-    } else if (companyName.includes("ups")) {
-      return `https://www.ups.com/track?tracknum=${trackingNumber}`;
-    } else if (companyName.includes("syria") || companyName.includes("سوريا")) {
-      return `https://syriaexpress.sy/tracking?number=${trackingNumber}`;
-    } else {
-      // Generic tracking URL for other companies
-      return `https://www.google.com/search?q=track+${encodeURIComponent(
-        company,
-      )}+${trackingNumber}`;
+    if (template) {
+      if (template.includes("{trackingNumber}")) {
+        return template.replaceAll(
+          "{trackingNumber}",
+          encodeURIComponent(trackingNumber),
+        );
+      }
+
+      const separator = template.includes("?") ? "&" : "?";
+      return `${template}${separator}trackingNumber=${encodeURIComponent(trackingNumber)}`;
     }
+
+    return `https://www.google.com/search?q=track+${encodeURIComponent(
+      shipment.shippingCompany?.name || "shipment",
+    )}+${encodeURIComponent(trackingNumber)}`;
   };
 
   const handleTrackShipment = (shipment: Shipment) => {
-    const trackingUrl = getTrackingUrl(
-      shipment.company,
-      shipment.trackingNumber,
-    );
+    const trackingUrl = getTrackingUrl(shipment);
     window.open(trackingUrl, "_blank");
     toast.success(
       language === "ar"
@@ -182,21 +406,37 @@ export default function Shipments() {
     );
   };
 
+  const canUseShipmentDocuments = (shipment?: Shipment | null) => {
+    if (!shipment) return false;
+
+    return (
+      shipment.status !== "cancelled" &&
+      shipment.cancellationRequest?.status !== "approved"
+    );
+  };
+
+  const canTrackShipment = (shipment?: Shipment | null) => {
+    if (!shipment) return false;
+    return shipment.status === "in-transit";
+  };
+
   // Filter shipments based on search term, status, and date range
   const filteredShipments = shipments.filter((shipment) => {
     const matchesSearch =
       shipment.trackingNumber
         .toLowerCase()
         .includes(searchTerm.toLowerCase()) ||
-      shipment.sender.senderName
-        .toLowerCase()
-        .includes(searchTerm.toLowerCase()) ||
-      shipment.receiver.receiverName
+      shipment.sender.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      shipment.receivers[0]?.name
         .toLowerCase()
         .includes(searchTerm.toLowerCase());
 
     const matchesStatus =
       statusFilter === "all" || shipment.status === statusFilter;
+
+    const matchesCompany =
+      companyFilter === "all" ||
+      shipment.shippingCompany?.name === companyFilter;
 
     // Date filtering
     const shipmentDate = new Date(shipment.createdAt);
@@ -207,8 +447,31 @@ export default function Shipments() {
     const matchesDateTo = !toDate || shipmentDate <= toDate;
     const matchesDate = matchesDateFrom && matchesDateTo;
 
-    return matchesSearch && matchesStatus && matchesDate;
+    return matchesSearch && matchesStatus && matchesCompany && matchesDate;
   });
+
+  const companyFilterOptions = useMemo(() => {
+    const companies = Array.from(
+      new Set(
+        shipments
+          .map((shipment) => shipment.shippingCompany?.name?.trim())
+          .filter((name): name is string => Boolean(name)),
+      ),
+    );
+
+    return companies.sort((a, b) =>
+      a.localeCompare(b, language === "ar" ? "ar" : "en", {
+        sensitivity: "base",
+      }),
+    );
+  }, [shipments, language]);
+
+  const adjustedWeightShipmentsCount = useMemo(
+    () =>
+      shipments.filter((shipment) => shipment.weightAdjustment?.isAdjusted)
+        .length,
+    [shipments],
+  );
 
   const handleViewDetails = (shipment: Shipment) => {
     setSelectedShipment(shipment);
@@ -230,160 +493,208 @@ export default function Shipments() {
     setIsCancelDialogOpen(true);
   };
 
-  const confirmCancelShipment = () => {
+  const confirmCancelShipment = async () => {
     if (!selectedShipment || !cancelReason.trim()) {
       toast.error(t("shipments.enterCancelReason"));
       return;
     }
 
-    // Update shipment status to cancelled
-    setShipments((prev) =>
-      prev.map((shipment) =>
-        shipment.id === selectedShipment.id
-          ? { ...shipment, status: "cancelled" as const }
-          : shipment,
-      ),
-    );
+    try {
+      await shipmentService.cancelShipment(
+        selectedShipment._id,
+        cancelReason.trim(),
+      );
 
-    toast.success(
-      t("shipments.cancelRequestSent", {
-        trackingNumber: selectedShipment.trackingNumber,
-      }),
-    );
-    setIsCancelDialogOpen(false);
-    setSelectedShipment(null);
-    setCancelReason("");
+      // Update local state
+      setShipments((prev) =>
+        prev.map((shipment) =>
+          shipment._id === selectedShipment._id
+            ? {
+                ...shipment,
+                cancellationRequest: {
+                  isRequested: true,
+                  reason: cancelReason.trim(),
+                  status: "pending",
+                },
+              }
+            : shipment,
+        ),
+      );
+
+      toast.success(
+        t("shipments.cancelRequestSent", {
+          trackingNumber: selectedShipment.trackingNumber,
+        }),
+      );
+      setIsCancelDialogOpen(false);
+      setSelectedShipment(null);
+      setCancelReason("");
+    } catch (error: any) {
+      toast.error(
+        language === "ar"
+          ? "حدث خطأ في إلغاء الشحنة"
+          : "Error cancelling shipment",
+      );
+    }
+  };
+
+  const toDataUrl = async (imageUrl: string): Promise<string | null> => {
+    try {
+      const response = await fetch(imageUrl);
+      const blob = await response.blob();
+
+      return await new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () =>
+          resolve(typeof reader.result === "string" ? reader.result : null);
+        reader.onerror = () => resolve(null);
+        reader.readAsDataURL(blob);
+      });
+    } catch {
+      return null;
+    }
   };
 
   // Generate PDF for shipment
-  const generatePDF = (shipment: Shipment) => {
+  const generatePDF = async (shipment: Shipment) => {
     const doc = new jsPDF();
 
-    // Set document direction for RTL languages
     if (isRTL) {
       doc.setFont("helvetica", "normal");
       doc.setR2L(true);
     }
 
-    // Title
-    doc.setFontSize(20);
-    doc.text(t("shipments.shippingBill"), 105, 15, { align: "center" });
+    const receiver = shipment.receivers[0];
+    const createdDate = new Date(shipment.createdAt).toLocaleDateString(
+      isRTL ? "ar-SY" : "en-US",
+    );
 
-    doc.setFontSize(12);
+    doc.setFillColor(16, 70, 130);
+    doc.rect(0, 0, 210, 24, "F");
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(18);
+    doc.text("SHIPPING AIR WAYBILL", 14, 15);
+    doc.setFontSize(10);
+    doc.text("Shhanli Logistics", 160, 15);
+
+    doc.setTextColor(0, 0, 0);
+    doc.setFontSize(14);
     doc.text(
       `${t("shipments.trackingNumber")}: ${shipment.trackingNumber}`,
       14,
-      30,
+      34,
     );
-
-    // Sender Information
-    doc.setFontSize(14);
-    doc.text(t("sender.title"), 14, 45);
     doc.setFontSize(10);
-    doc.text(`${t("sender.name")}: ${shipment.sender.senderName}`, 14, 55);
-    doc.text(`${t("sender.phone")}: ${shipment.sender.senderPhone}`, 14, 60);
+    doc.text(`${t("shipments.createdDate")}: ${createdDate}`, 14, 41);
     doc.text(
-      `${t("sender.address")}: ${shipment.sender.senderStreet}, ${
-        shipment.sender.senderCity
-      }, ${shipment.sender.senderState}, ${shipment.sender.senderCountry}`,
-      14,
-      65,
+      `${t("status.title")}: ${t(`status.${shipment.status}`)}`,
+      120,
+      41,
     );
 
-    // Receiver Information
-    doc.setFontSize(14);
-    doc.text(t("receiver.title"), 14, 80);
+    const qrPayload = [
+      `Tracking:${shipment.trackingNumber}`,
+      `Company:${shipment.shippingCompany.name}`,
+      `Sender:${shipment.sender.name}`,
+      `Receiver:${receiver?.name || "-"}`,
+      `Created:${createdDate}`,
+    ].join(" | ");
+    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=140x140&data=${encodeURIComponent(
+      qrPayload,
+    )}`;
+    const qrDataUrl = await toDataUrl(qrUrl);
+
+    if (qrDataUrl) {
+      doc.addImage(qrDataUrl, "PNG", 160, 48, 36, 36);
+    } else {
+      doc.rect(160, 48, 36, 36);
+      doc.setFontSize(9);
+      doc.text("QR", 178, 67, { align: "center" });
+    }
+
+    doc.setDrawColor(200, 200, 200);
+    doc.rect(14, 48, 138, 42);
+    doc.setFontSize(12);
+    doc.text("SHIPPER", 18, 56);
     doc.setFontSize(10);
+    doc.text(`${t("sender.name")}: ${shipment.sender.name}`, 18, 63);
+    doc.text(`${t("sender.phone")}: ${shipment.sender.phone}`, 18, 69);
     doc.text(
-      `${t("receiver.name")}: ${shipment.receiver.receiverName}`,
-      14,
-      90,
-    );
-    doc.text(
-      `${t("receiver.phone")}: ${shipment.receiver.receiverPhone}`,
-      14,
-      95,
-    );
-    doc.text(
-      `${t("receiver.address")}: ${shipment.receiver.receiverStreet}, ${
-        shipment.receiver.receiverCity
-      }, ${shipment.receiver.receiverState}, ${
-        shipment.receiver.receiverCountry
-      }`,
-      14,
-      100,
+      `${t("sender.address")}: ${shipment.sender.country}, ${shipment.sender.state}, ${shipment.sender.city}, ${shipment.sender.street}`,
+      18,
+      75,
+      { maxWidth: 130 },
     );
 
-    // Package Details
-    doc.setFontSize(14);
-    doc.text(t("package.title"), 14, 115);
+    doc.rect(14, 96, 182, 42);
+    doc.setFontSize(12);
+    doc.text("CONSIGNEE", 18, 104);
+    doc.setFontSize(10);
+    doc.text(`${t("receiver.name")}: ${receiver?.name || "-"}`, 18, 111);
+    doc.text(`${t("receiver.phone")}: ${receiver?.phone || "-"}`, 18, 117);
+    doc.text(
+      `${t("receiver.address")}: ${receiver?.country || "-"}, ${receiver?.state || "-"}, ${receiver?.city || "-"}, ${receiver?.street || "-"}`,
+      18,
+      123,
+      { maxWidth: 170 },
+    );
+
+    doc.rect(14, 144, 182, 52);
+    doc.setFontSize(12);
+    doc.text("SHIPMENT DETAILS", 18, 152);
     doc.setFontSize(10);
     doc.text(
       `${t("package.type")}: ${t(`package.${shipment.package.type}`)}`,
-      14,
-      125,
+      18,
+      160,
     );
-    doc.text(`${t("package.weight")}: ${shipment.package.weight} kg`, 14, 130);
+    doc.text(`${t("package.weight")}: ${shipment.package.weight} kg`, 18, 166);
     doc.text(
-      `${t("package.value")}: ${shipment.package.value} ${
-        shipment.package.currency
-      }`,
-      14,
-      135,
+      `${t("package.value")}: ${shipment.package.value} ${shipment.package.currency}`,
+      18,
+      172,
     );
     doc.text(
-      `${t("package.description")}: ${shipment.package.description}`,
-      14,
-      140,
-    );
-
-    // Shipping Information
-    doc.setFontSize(14);
-    doc.text(t("shipment.shippingInfo"), 14, 155);
-    doc.setFontSize(10);
-    doc.text(`${t("shipment.shippingCompany")}: ${shipment.company}`, 14, 165);
-    doc.text(
-      `${t("shipment.totalCost")}: ${shipment.cost.toLocaleString()} SYP`,
-      14,
-      170,
+      `${t("shipment.shippingCompany")}: ${shipment.shippingCompany.name}`,
+      18,
+      178,
     );
     doc.text(
-      `${t("shipment.paymentMethod")}: ${t(
-        `shipment.${shipment.paymentMethod}`,
-      )}`,
-      14,
-      175,
-    );
-    doc.text(`${t("shipments.createdDate")}: ${shipment.createdAt}`, 14, 180);
-    doc.text(
-      `${t("shipments.estimatedDelivery")}: ${shipment.estimatedDelivery}`,
-      14,
-      185,
+      `${t("shipment.totalCost")}: ${shipment.cost.amount.toLocaleString()} ${shipment.cost.currency}`,
+      18,
+      184,
     );
     doc.text(
-      `${t("status.title")}: ${t(`status.${shipment.status}`)}`,
-      14,
+      `${t("shipment.paymentMethod")}: ${t(`shipment.${shipment.cost.paymentMethod}`)}`,
+      18,
       190,
     );
 
-    // Footer
+    doc.setFontSize(9);
+    doc.setTextColor(90, 90, 90);
+    doc.text(shipment.package.description || "-", 105, 202, {
+      align: "center",
+      maxWidth: 180,
+    });
+
+    doc.setDrawColor(180, 180, 180);
+    doc.line(14, 274, 196, 274);
     doc.setFontSize(8);
     doc.text(
-      `Generated by Shply - ${new Date().toLocaleDateString()}`,
+      `Generated by Shhanli - ${new Date().toLocaleDateString()}`,
       105,
       280,
       { align: "center" },
     );
 
-    // Save PDF
     doc.save(`Shipping-Bill-${shipment.trackingNumber}.pdf`);
   };
 
-  const handleDownloadPDF = () => {
+  const handleDownloadPDF = async () => {
     if (!selectedShipment) return;
 
     try {
-      generatePDF(selectedShipment);
+      await generatePDF(selectedShipment);
       toast.success(
         language === "ar"
           ? `تم تحميل البوليصة ${selectedShipment.trackingNumber} كملف PDF`
@@ -401,151 +712,192 @@ export default function Shipments() {
   };
 
   const generatePrintContent = (shipment: Shipment) => {
+    const receiver = shipment.receivers[0];
+    const createdDate = new Date(shipment.createdAt).toLocaleDateString(
+      isRTL ? "ar-SY" : "en-US",
+    );
+    const qrPayload = [
+      `Tracking:${shipment.trackingNumber}`,
+      `Company:${shipment.shippingCompany.name}`,
+      `Sender:${shipment.sender.name}`,
+      `Receiver:${receiver?.name || "-"}`,
+      `Created:${createdDate}`,
+    ].join(" | ");
+    const qrSrc = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(
+      qrPayload,
+    )}`;
+
+    const escapeHtml = (value: unknown) =>
+      String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#39;");
+
     return `
       <!DOCTYPE html>
       <html dir="${isRTL ? "rtl" : "ltr"}" lang="${isRTL ? "ar" : "en"}">
       <head>
         <meta charset="UTF-8">
-        <title>${t("shipments.shippingBill")} - ${
-          shipment.trackingNumber
-        }</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>${t("shipments.shippingBill")} - ${escapeHtml(
+          shipment.trackingNumber,
+        )}</title>
         <style>
-          body { font-family: Arial, sans-serif; margin: 20px; direction: ${
-            isRTL ? "rtl" : "ltr"
-          }; }
-          .header { text-align: center; border-bottom: 2px solid #000; padding-bottom: 20px; margin-bottom: 20px; }
-          .section { margin-bottom: 20px; padding: 15px; border: 1px solid #ddd; }
-          .section-title { font-weight: bold; font-size: 16px; margin-bottom: 10px; color: #333; }
-          .info-row { display: flex; justify-content: space-between; margin-bottom: 8px; }
-          .info-label { font-weight: bold; }
-          .tracking-number { font-size: 24px; font-weight: bold; text-align: center; margin: 20px 0; }
-          @media print { body { margin: 0; } }
+          :root {
+            --ink: #111827;
+            --muted: #4b5563;
+            --line: #d1d5db;
+            --brand: #0f4c81;
+            --bg: #f9fafb;
+          }
+          * { box-sizing: border-box; }
+          body {
+            margin: 0;
+            background: var(--bg);
+            color: var(--ink);
+            font-family: "Segoe UI", Tahoma, Arial, sans-serif;
+            direction: ${isRTL ? "rtl" : "ltr"};
+          }
+          .sheet {
+            width: 210mm;
+            min-height: 297mm;
+            margin: 0 auto;
+            background: #fff;
+            padding: 10mm;
+          }
+          .header {
+            display: grid;
+            grid-template-columns: 1fr auto;
+            gap: 16px;
+            background: var(--brand);
+            color: #fff;
+            padding: 12px 16px;
+            border-radius: 10px;
+          }
+          .header-title { margin: 0; font-size: 22px; letter-spacing: 1.2px; }
+          .header-sub { margin: 4px 0 0; font-size: 12px; opacity: 0.95; }
+          .tracking { font-size: 18px; font-weight: 700; margin-top: 10px; }
+          .meta {
+            margin-top: 10px;
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 8px;
+          }
+          .meta-box {
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            padding: 8px;
+            font-size: 12px;
+            background: #fff;
+          }
+          .meta-label { color: var(--muted); display: block; margin-bottom: 2px; }
+          .grid {
+            margin-top: 12px;
+            display: grid;
+            grid-template-columns: 1fr 58mm;
+            gap: 12px;
+          }
+          .panel {
+            border: 1px solid var(--line);
+            border-radius: 10px;
+            padding: 10px;
+          }
+          .panel-title {
+            margin: 0 0 8px;
+            font-size: 13px;
+            color: var(--brand);
+            letter-spacing: 0.6px;
+          }
+          .row {
+            display: grid;
+            grid-template-columns: 110px 1fr;
+            gap: 6px;
+            font-size: 12px;
+            margin-bottom: 6px;
+            align-items: start;
+          }
+          .label { color: var(--muted); font-weight: 600; }
+          .value { word-break: break-word; }
+          .qr-wrap {
+            border: 1px solid var(--line);
+            border-radius: 10px;
+            padding: 10px;
+            text-align: center;
+          }
+          .qr-wrap img { width: 170px; height: 170px; object-fit: contain; }
+          .qr-caption { font-size: 11px; color: var(--muted); margin-top: 6px; }
+          .footer {
+            margin-top: 12px;
+            border-top: 1px dashed var(--line);
+            padding-top: 8px;
+            text-align: center;
+            color: var(--muted);
+            font-size: 11px;
+          }
+          @media print {
+            body { background: #fff; }
+            .sheet { width: auto; min-height: auto; margin: 0; padding: 0; }
+            @page { size: A4; margin: 10mm; }
+          }
         </style>
       </head>
       <body>
-        <div class="header">
-          <h1>شحنلي</h1>
-          <h2>شحنلي</h2>
-          <div class="tracking-number">${shipment.trackingNumber}</div>
-        </div>
-        
-        <div class="section">
-          <div class="section-title">${t("sender.title")} - ${
-            language === "ar" ? "Sender Information" : "معلومات المرسل"
-          }</div>
-          <div class="info-row">
-            <span class="info-label">${t("sender.name")} - ${
-              language === "ar" ? "Name" : "الاسم"
-            }:</span>
-            <span>${shipment.sender.senderName}</span>
+        <div class="sheet">
+          <div class="header">
+            <div>
+              <h1 class="header-title">SHIPPING AIR WAYBILL</h1>
+              <div class="header-sub">Shhanli Logistics | Global Shipping Form</div>
+              <div class="tracking">${escapeHtml(shipment.trackingNumber)}</div>
+            </div>
+            <div style="font-size:12px; text-align:${isRTL ? "left" : "right"}">
+              <div>${t("shipments.createdDate")}: ${escapeHtml(createdDate)}</div>
+              <div>${t("status.title")}: ${escapeHtml(t(`status.${shipment.status}`))}</div>
+              <div>${t("shipment.shippingCompany")}: ${escapeHtml(shipment.shippingCompany.name)}</div>
+            </div>
           </div>
-          <div class="info-row">
-            <span class="info-label">${t("sender.phone")} - ${
-              language === "ar" ? "Phone" : "الهاتف"
-            }:</span>
-            <span>${shipment.sender.senderPhone}</span>
+
+          <div class="meta">
+            <div class="meta-box"><span class="meta-label">${t("shipment.totalCost")}</span>${escapeHtml(shipment.cost.amount.toLocaleString())} ${escapeHtml(shipment.cost.currency)}</div>
+            <div class="meta-box"><span class="meta-label">${t("shipment.paymentMethod")}</span>${escapeHtml(t(`shipment.${shipment.cost.paymentMethod}`))}</div>
+            <div class="meta-box"><span class="meta-label">${t("package.weight")}</span>${escapeHtml(shipment.package.weight)} kg</div>
           </div>
-          <div class="info-row">
-            <span class="info-label">${t("sender.address")} - ${
-              language === "ar" ? "Address" : "العنوان"
-            }:</span>
-            <span>${shipment.sender.senderCountry},${
-              shipment.sender.senderState
-            },${shipment.sender.senderCity}, ${shipment.sender.senderStreet}</span>
+
+          <div class="grid">
+            <div>
+              <div class="panel" style="margin-bottom:10px;">
+                <h3 class="panel-title">SHIPPER / ${t("sender.title")}</h3>
+                <div class="row"><div class="label">${t("sender.name")}</div><div class="value">${escapeHtml(shipment.sender.name)}</div></div>
+                <div class="row"><div class="label">${t("sender.phone")}</div><div class="value">${escapeHtml(shipment.sender.phone)}</div></div>
+                <div class="row"><div class="label">${t("sender.address")}</div><div class="value">${escapeHtml(`${shipment.sender.country}, ${shipment.sender.state}, ${shipment.sender.city}, ${shipment.sender.street}`)}</div></div>
+              </div>
+
+              <div class="panel" style="margin-bottom:10px;">
+                <h3 class="panel-title">CONSIGNEE / ${t("receiver.title")}</h3>
+                <div class="row"><div class="label">${t("receiver.name")}</div><div class="value">${escapeHtml(receiver?.name || "-")}</div></div>
+                <div class="row"><div class="label">${t("receiver.phone")}</div><div class="value">${escapeHtml(receiver?.phone || "-")}</div></div>
+                <div class="row"><div class="label">${t("receiver.address")}</div><div class="value">${escapeHtml(`${receiver?.country || "-"}, ${receiver?.state || "-"}, ${receiver?.city || "-"}, ${receiver?.street || "-"}`)}</div></div>
+              </div>
+
+              <div class="panel">
+                <h3 class="panel-title">SHIPMENT DETAILS / ${t("package.title")}</h3>
+                <div class="row"><div class="label">${t("package.type")}</div><div class="value">${escapeHtml(t(`package.${shipment.package.type}`))}</div></div>
+                <div class="row"><div class="label">${t("package.value")}</div><div class="value">${escapeHtml(shipment.package.value)} ${escapeHtml(shipment.package.currency)}</div></div>
+                <div class="row"><div class="label">${t("package.description")}</div><div class="value">${escapeHtml(shipment.package.description)}</div></div>
+              </div>
+            </div>
+
+            <div>
+              <div class="qr-wrap">
+                <img src="${qrSrc}" alt="QR Code" />
+                <div class="qr-caption">Scan for shipment details</div>
+              </div>
+            </div>
           </div>
-        </div>
-        
-        <div class="section">
-          <div class="section-title">${t("receiver.title")} - ${
-            language === "ar" ? "Receiver Information" : "معلومات المستقبل"
-          }</div>
-          <div class="info-row">
-            <span class="info-label">${t("sender.name")} - ${
-              language === "ar" ? "Name" : "الاسم"
-            }:</span>
-            <span>${shipment.receiver.receiverName}</span>
-          </div>
-          <div class="info-row">
-            <span class="info-label">${t("sender.phone")} - ${
-              language === "ar" ? "Phone" : "الهاتف"
-            }:</span>
-            <span>${shipment.receiver.receiverPhone}</span>
-          </div>
-          <div class="info-row">
-            <span class="info-label">${t("sender.address")} - ${
-              language === "ar" ? "Address" : "العنوان"
-            }:</span>
-            <span>${shipment.receiver.receiverCountry}, ${
-              shipment.receiver.receiverState
-            }, ${shipment.receiver.receiverCity}, ${
-              shipment.receiver.receiverStreet
-            }</span>
-          </div>
-        </div>
-        
-        <div class="section">
-          <div class="section-title">${t("package.title")} - ${
-            language === "ar" ? "Package Details" : "تفاصيل الطرد"
-          }</div>
-          <div class="info-row">
-            <span class="info-label">${t("package.type")} - ${
-              language === "ar" ? "Type" : "النوع"
-            }:</span>
-            <span>${t(`package.${shipment.package.type}`)}</span>
-          </div>
-          <div class="info-row">
-            <span class="info-label">${t("package.weight")} - ${
-              language === "ar" ? "Weight" : "الوزن"
-            }:</span>
-            <span>${shipment.package.weight} kg</span>
-          </div>
-          <div class="info-row">
-            <span class="info-label">${t("package.description")} - ${
-              language === "ar" ? "Description" : "الوصف"
-            }:</span>
-            <span>${shipment.package.description}</span>
-          </div>
-          <div class="info-row">
-            <span class="info-label">${t("package.value")} - ${
-              language === "ar" ? "Value" : "القيمة"
-            }:</span>
-            <span>${shipment.package.value} ${shipment.package.currency}</span>
-          </div>
-        </div>
-        
-        <div class="section">
-          <div class="section-title">${t("shipment.shippingInfo")} - ${
-            language === "ar" ? "Shipping Information" : "معلومات الشحن"
-          }</div>
-          <div class="info-row">
-            <span class="info-label">${t("shipment.shippingCompany")} - ${
-              language === "ar" ? "Company" : "شركة الشحن"
-            }:</span>
-            <span>${shipment.company}</span>
-          </div>
-          <div class="info-row">
-            <span class="info-label">${t("shipment.totalCost")} - ${
-              language === "ar" ? "Cost" : "التكلفة"
-            }:</span>
-            <span>${shipment.cost.toLocaleString()} SYP</span>
-          </div>
-          <div class="info-row">
-            <span class="info-label">${t("shipment.paymentMethod")} - ${
-              language === "ar" ? "Payment" : "طريقة الدفع"
-            }:</span>
-            <span>${t(`shipment.${shipment.paymentMethod}`)}</span>
-          </div>
-          <div class="info-row">
-            <span class="info-label">${t("shipments.createdDate")} - ${
-              language === "ar" ? "Created" : "تاريخ الإنشاء"
-            }:</span>
-            <span>${shipment.createdAt}</span>
-          </div>
-          <div class="info-row">
-            <span class="info-label">${t("shipments.estimatedDelivery")} - ${
-              language === "ar" ? "Estimated Delivery" : "التسليم المتوقع"
-            }:</span>
-            <span>${shipment.estimatedDelivery}</span>
+
+          <div class="footer">
+            Generated by Shhanli - ${escapeHtml(new Date().toLocaleString())}
           </div>
         </div>
       </body>
@@ -566,11 +918,44 @@ export default function Shipments() {
     setIsPrintDialogOpen(false);
   };
 
-  // Clear date filters
+  const getCurrentShipmentLocation = (shipment?: Shipment | null) => {
+    if (!shipment?.statusHistory?.length) {
+      return "";
+    }
+
+    const latestLocationEntry = [...shipment.statusHistory]
+      .reverse()
+      .find((entry) => String(entry.location || "").trim());
+
+    return String(latestLocationEntry?.location || "").trim();
+  };
+
   const clearDateFilters = () => {
     setDateFrom("");
     setDateTo("");
   };
+
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString);
+    return date.toLocaleDateString(isRTL ? "ar-SY" : "en-US", {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    });
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <Package className="w-12 h-12 text-gray-400 mx-auto mb-4 animate-pulse" />
+          <p className="text-gray-600">
+            {language === "ar" ? "جاري التحميل..." : "Loading..."}
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4 px-3 sm:px-6" dir={isRTL ? "rtl" : "ltr"}>
@@ -581,10 +966,22 @@ export default function Shipments() {
         </h1>
       </div>
 
+      {adjustedWeightShipmentsCount > 0 && (
+        <Card className="border-amber-300 bg-amber-50">
+          <CardContent className="py-4">
+            <p className="text-sm text-amber-800">
+              {language === "ar"
+                ? `تم تعديل وزن ${adjustedWeightShipmentsCount} شحنة من قبل شركة الشحن. تم تمييزها باللون الأصفر.`
+                : `${adjustedWeightShipmentsCount} shipment(s) had weight adjusted by the shipping company. They are highlighted in yellow.`}
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Search and Filter */}
       <Card className="shadow-sm">
         <CardContent className="p-4 sm:p-6">
-          <div className="flex flex-col space-y-3 sm:flex-row sm:space-y-0 sm:gap-4">
+          <div className="flex flex-col space-y-3 sm:flex-row sm:space-y-0 sm:gap-4 sm:flex-wrap">
             <div className="flex-1 relative">
               <Search
                 className={`absolute ${
@@ -616,6 +1013,25 @@ export default function Shipments() {
                 <SelectItem value="cancelled">
                   {t("status.cancelled")}
                 </SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={companyFilter} onValueChange={setCompanyFilter}>
+              <SelectTrigger className="w-full sm:w-56 h-11">
+                <SelectValue
+                  placeholder={
+                    language === "ar" ? "فلترة حسب الشركة" : "Filter by company"
+                  }
+                />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">
+                  {language === "ar" ? "كل الشركات" : "All companies"}
+                </SelectItem>
+                {companyFilterOptions.map((companyName) => (
+                  <SelectItem key={companyName} value={companyName}>
+                    {companyName}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
@@ -663,15 +1079,35 @@ export default function Shipments() {
       {/* Shipments List */}
       <div className="space-y-3">
         {filteredShipments.map((shipment) => (
-          <Card key={shipment.id} className="hover:shadow-md transition-shadow">
+          <Card
+            key={shipment._id}
+            className={`hover:shadow-md transition-shadow ${
+              shipment.weightAdjustment?.isAdjusted
+                ? "border-amber-300 bg-amber-50/60"
+                : ""
+            }`}
+          >
             <CardContent className="p-4 sm:p-6">
               {/* Mobile Layout */}
               <div className="block sm:hidden space-y-4">
                 {/* Header Row */}
                 <div className="flex items-start justify-between">
-                  <div className="flex items-center space-x-3">
-                    <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                      <Package className="w-5 h-5 text-blue-600" />
+                  <div className="flex items-start gap-3">
+                    <div className="flex flex-col items-center gap-1 w-20 flex-shrink-0">
+                      <p className="font-bold text-xs text-gray-900 text-center leading-tight line-clamp-2">
+                        {shipment.shippingCompany.name}
+                      </p>
+                      <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
+                        {getCompanyLogoForShipment(shipment) ? (
+                          <img
+                            src={getCompanyLogoForShipment(shipment)}
+                            alt={shipment.shippingCompany.name}
+                            className="w-8 h-8 rounded-md object-cover"
+                          />
+                        ) : (
+                          <Truck className="w-5 h-5 text-blue-600" />
+                        )}
+                      </div>
                     </div>
                     <div className="min-w-0 flex-1">
                       <h3 className="font-semibold text-base text-gray-900 truncate">
@@ -687,6 +1123,21 @@ export default function Shipments() {
                           {t(`status.${shipment.status}`)}
                         </div>
                       </Badge>
+                      {shipment.weightAdjustment?.isAdjusted && (
+                        <Badge className="bg-amber-100 text-amber-800 text-xs mt-1">
+                          {language === "ar"
+                            ? "تم تعديل الوزن"
+                            : "Weight adjusted"}
+                        </Badge>
+                      )}
+                      {shipment.weightAdjustment?.balanceDeduction?.status ===
+                        "insufficient-cancelled" && (
+                        <Badge className="bg-red-100 text-red-800 text-xs mt-1">
+                          {language === "ar"
+                            ? "ملغاة بسبب عدم كفاية الرصيد"
+                            : "Cancelled due to insufficient balance"}
+                        </Badge>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -697,38 +1148,63 @@ export default function Shipments() {
                     <span className="font-medium">
                       {language === "ar" ? "من:" : "From:"}
                     </span>
-                    <span className="text-right">
-                      {shipment.sender.senderName}
-                    </span>
+                    <span className="text-right">{shipment.sender.name}</span>
                   </p>
                   <p className="flex items-center justify-between">
                     <span className="font-medium">
                       {language === "ar" ? "إلى:" : "To:"}
                     </span>
                     <span className="text-right">
-                      {shipment.receiver.receiverName}
+                      {shipment.receivers[0]?.name}
                     </span>
                   </p>
                   <p className="flex items-center justify-between">
                     <span className="font-medium">
                       {language === "ar" ? "تاريخ الإنشاء:" : "Created Date:"}
                     </span>
-                    <span className="text-right">{shipment.createdAt}</span>
+                    <span className="text-right">
+                      {formatDate(shipment.createdAt)}
+                    </span>
                   </p>
                   <p className="flex items-center justify-between">
                     <span className="font-medium">
                       {language === "ar" ? "شركة الشحن:" : "Company:"}
                     </span>
-                    <span className="text-right">{shipment.company}</span>
+                    <span className="text-right">
+                      {shipment.shippingCompany.name}
+                    </span>
                   </p>
+                  {getCurrentShipmentLocation(shipment) && (
+                    <p className="flex items-center justify-between">
+                      <span className="font-medium">
+                        {language === "ar"
+                          ? "الموقع الحالي:"
+                          : "Current Location:"}
+                      </span>
+                      <span className="text-right">
+                        {getCurrentShipmentLocation(shipment)}
+                      </span>
+                    </p>
+                  )}
                   <p className="flex items-center justify-between">
                     <span className="font-medium">
                       {language === "ar" ? "التكلفة:" : "Cost:"}
                     </span>
                     <span className="text-right font-semibold text-gray-900">
-                      {shipment.cost.toLocaleString()} SYP
+                      {shipment.cost.amount.toLocaleString()}{" "}
+                      {shipment.cost.currency}
                     </span>
                   </p>
+                  {shipment.weightAdjustment?.note?.trim() && (
+                    <div className="rounded-md bg-rose-50 border border-rose-300 p-2 text-xs text-rose-900">
+                      <span className="font-medium">
+                        {language === "ar"
+                          ? "ملاحظة تصحيح الوزن: "
+                          : "Weight adjustment note: "}
+                      </span>
+                      {shipment.weightAdjustment.note}
+                    </div>
+                  )}
                 </div>
 
                 {/* Action Buttons */}
@@ -743,37 +1219,42 @@ export default function Shipments() {
                       <Eye className="w-4 h-4 mr-2" />
                       {language === "ar" ? "عرض" : "View"}
                     </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleTrackShipment(shipment)}
-                      className="flex-1 h-10 text-blue-600 hover:text-blue-700 border-blue-200 hover:border-blue-300"
-                    >
-                      <ExternalLink className="w-4 h-4 mr-2" />
-                      {language === "ar" ? "تتبع" : "Track"}
-                    </Button>
-                  </div>
-                  <div className="flex space-x-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handlePrintBill(shipment)}
-                      className="flex-1 h-10 text-green-600 hover:text-green-700 border-green-200 hover:border-green-300"
-                    >
-                      <Printer className="w-4 h-4 mr-2" />
-                      {language === "ar" ? "طباعة" : "Print"}
-                    </Button>
-                    {shipment.status === "pending" && (
+                    {canTrackShipment(shipment) && (
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => handleCancelShipment(shipment)}
-                        className="flex-1 h-10 text-red-600 hover:text-red-700 border-red-200 hover:border-red-300"
+                        onClick={() => handleTrackShipment(shipment)}
+                        className="flex-1 h-10 text-blue-600 hover:text-blue-700 border-blue-200 hover:border-blue-300"
                       >
-                        <X className="w-4 h-4 mr-2" />
-                        {language === "ar" ? "إلغاء" : "Cancel"}
+                        <ExternalLink className="w-4 h-4 mr-2" />
+                        {language === "ar" ? "تتبع" : "Track"}
                       </Button>
                     )}
+                  </div>
+                  <div className="flex space-x-2">
+                    {canUseShipmentDocuments(shipment) && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handlePrintBill(shipment)}
+                        className="flex-1 h-10 text-green-600 hover:text-green-700 border-green-200 hover:border-green-300"
+                      >
+                        <Printer className="w-4 h-4 mr-2" />
+                        {language === "ar" ? "طباعة" : "Print"}
+                      </Button>
+                    )}
+                    {shipment.status === "pending" &&
+                      shipment.cancellationRequest?.status !== "pending" && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleCancelShipment(shipment)}
+                          className="flex-1 h-10 text-red-600 hover:text-red-700 border-red-200 hover:border-red-300"
+                        >
+                          <X className="w-4 h-4 mr-2" />
+                          {language === "ar" ? "إلغاء" : "Cancel"}
+                        </Button>
+                      )}
                   </div>
                 </div>
               </div>
@@ -781,8 +1262,21 @@ export default function Shipments() {
               {/* Desktop Layout */}
               <div className="hidden sm:flex items-center justify-between">
                 <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
-                    <Package className="w-6 h-6 text-blue-600" />
+                  <div className="flex flex-col items-center gap-1 w-24 flex-shrink-0">
+                    <p className="font-bold text-sm text-gray-900 text-center leading-tight line-clamp-2">
+                      {shipment.shippingCompany.name}
+                    </p>
+                    <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
+                      {getCompanyLogoForShipment(shipment) ? (
+                        <img
+                          src={getCompanyLogoForShipment(shipment)}
+                          alt={shipment.shippingCompany.name}
+                          className="w-10 h-10 rounded-md object-cover"
+                        />
+                      ) : (
+                        <Truck className="w-6 h-6 text-blue-600" />
+                      )}
+                    </div>
                   </div>
                   <div>
                     <h3 className="font-semibold text-lg text-gray-900">
@@ -790,8 +1284,8 @@ export default function Shipments() {
                     </h3>
                     <p className="text-sm text-gray-600">
                       {language === "ar"
-                        ? `من ${shipment.sender.senderName} إلى ${shipment.receiver.receiverName}`
-                        : `From ${shipment.sender.senderName} to ${shipment.receiver.receiverName}`}
+                        ? `من ${shipment.sender.name} إلى ${shipment.receivers[0]?.name}`
+                        : `From ${shipment.sender.name} to ${shipment.receivers[0]?.name}`}
                     </p>
                     <div className="flex items-center gap-4 mt-2">
                       <Badge className={getStatusColor(shipment.status)}>
@@ -800,16 +1294,93 @@ export default function Shipments() {
                           {t(`status.${shipment.status}`)}
                         </div>
                       </Badge>
+                      {shipment.cancellationRequest?.status === "pending" && (
+                        <Badge className="bg-orange-100 text-orange-800">
+                          {language === "ar"
+                            ? "طلب إلغاء قيد المراجعة"
+                            : "Cancellation request pending"}
+                        </Badge>
+                      )}
+                      {shipment.cancellationRequest?.status === "rejected" && (
+                        <Badge className="bg-red-100 text-red-800">
+                          {language === "ar"
+                            ? "تم رفض طلب الإلغاء"
+                            : "Cancellation request rejected"}
+                        </Badge>
+                      )}
+                      {shipment.cancellationRequest?.status === "approved" && (
+                        <Badge className="bg-green-100 text-green-800">
+                          {language === "ar"
+                            ? "تمت الموافقة على طلب الإلغاء"
+                            : "Cancellation request approved"}
+                        </Badge>
+                      )}
+                      {shipment.weightAdjustment?.isAdjusted && (
+                        <Badge className="bg-amber-100 text-amber-800">
+                          {language === "ar"
+                            ? "تم تعديل الوزن"
+                            : "Weight adjusted"}
+                        </Badge>
+                      )}
+                      {shipment.weightAdjustment?.balanceDeduction?.status ===
+                        "insufficient-cancelled" && (
+                        <Badge className="bg-red-100 text-red-800">
+                          {language === "ar"
+                            ? "ملغاة بسبب عدم كفاية الرصيد"
+                            : "Cancelled due to insufficient balance"}
+                        </Badge>
+                      )}
+                      {shipment.weightAdjustment?.balanceDeduction?.status ===
+                        "deducted" &&
+                        Number(
+                          shipment.weightAdjustment?.balanceDeduction?.amount ||
+                            0,
+                        ) > 0 && (
+                          <Badge className="bg-blue-100 text-blue-800">
+                            {language === "ar"
+                              ? `تم خصم ${Number(
+                                  shipment.weightAdjustment?.balanceDeduction
+                                    ?.amount || 0,
+                                ).toLocaleString(
+                                  "ar-SY",
+                                )} ${shipment.weightAdjustment?.balanceDeduction?.currency || shipment.cost.currency}`
+                              : `${Number(
+                                  shipment.weightAdjustment?.balanceDeduction
+                                    ?.amount || 0,
+                                ).toFixed(
+                                  2,
+                                )} ${shipment.weightAdjustment?.balanceDeduction?.currency || shipment.cost.currency} deducted`}
+                          </Badge>
+                        )}
                       <span className="text-sm text-gray-500">
-                        {shipment.createdAt}
+                        {formatDate(shipment.createdAt)}
                       </span>
                       <span className="text-sm text-gray-500">
-                        {shipment.company}
+                        {shipment.shippingCompany.name}
                       </span>
+                      {getCurrentShipmentLocation(shipment) && (
+                        <span className="text-sm text-gray-500">
+                          {language === "ar"
+                            ? "الموقع الحالي:"
+                            : "Current Location:"}{" "}
+                          {getCurrentShipmentLocation(shipment)}
+                        </span>
+                      )}
                       <span className="text-sm font-medium text-gray-900">
-                        {shipment.cost.toLocaleString()} SYP
+                        {shipment.cost.amount.toLocaleString()}{" "}
+                        {shipment.cost.currency}
                       </span>
                     </div>
+                    {shipment.weightAdjustment?.note?.trim() && (
+                      <p className="mt-2 text-xs text-rose-900 bg-rose-50 border border-rose-300 rounded-md px-2 py-1">
+                        <span className="font-medium">
+                          {language === "ar"
+                            ? "ملاحظة تصحيح الوزن: "
+                            : "Weight adjustment note: "}
+                        </span>
+                        {shipment.weightAdjustment.note}
+                      </p>
+                    )}
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
@@ -821,35 +1392,40 @@ export default function Shipments() {
                     <Eye className="w-4 h-4 mr-2" />
                     {language === "ar" ? "عرض" : "View"}
                   </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => handleTrackShipment(shipment)}
-                    className="text-blue-600 hover:text-blue-700"
-                  >
-                    <ExternalLink className="w-4 h-4 mr-2" />
-                    {language === "ar" ? "تتبع البوليصة" : "Track Shipment"}
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => handlePrintBill(shipment)}
-                    className="text-green-600 hover:text-green-700"
-                  >
-                    <Printer className="w-4 h-4 mr-2" />
-                    {language === "ar" ? "طباعة" : "Print"}
-                  </Button>
-                  {shipment.status === "pending" && (
+                  {canTrackShipment(shipment) && (
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => handleCancelShipment(shipment)}
-                      className="text-red-600 hover:text-red-700"
+                      onClick={() => handleTrackShipment(shipment)}
+                      className="text-blue-600 hover:text-blue-700"
                     >
-                      <X className="w-4 h-4 mr-2" />
-                      {language === "ar" ? "إلغاء" : "Cancel"}
+                      <ExternalLink className="w-4 h-4 mr-2" />
+                      {language === "ar" ? "تتبع البوليصة" : "Track Shipment"}
                     </Button>
                   )}
+                  {canUseShipmentDocuments(shipment) && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handlePrintBill(shipment)}
+                      className="text-green-600 hover:text-green-700"
+                    >
+                      <Printer className="w-4 h-4 mr-2" />
+                      {language === "ar" ? "طباعة" : "Print"}
+                    </Button>
+                  )}
+                  {shipment.status === "pending" &&
+                    shipment.cancellationRequest?.status !== "pending" && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleCancelShipment(shipment)}
+                        className="text-red-600 hover:text-red-700"
+                      >
+                        <X className="w-4 h-4 mr-2" />
+                        {language === "ar" ? "إلغاء" : "Cancel"}
+                      </Button>
+                    )}
                 </div>
               </div>
             </CardContent>
@@ -914,25 +1490,25 @@ export default function Shipments() {
                       <span className="font-medium">
                         {language === "ar" ? "الاسم:" : "Name:"}
                       </span>{" "}
-                      {selectedShipment.sender.senderName}
+                      {selectedShipment.sender.name}
                     </p>
                     <p>
                       <span className="font-medium">
                         {language === "ar" ? "الهاتف:" : "Phone:"}
                       </span>{" "}
-                      {selectedShipment.sender.senderPhone}
+                      {selectedShipment.sender.phone}
                     </p>
                     <p>
                       <span className="font-medium">
                         {language === "ar" ? "العنوان:" : "Address:"}
                       </span>{" "}
-                      {selectedShipment.sender.senderCountry}
+                      {selectedShipment.sender.country}
                     </p>
                     <p>
                       <span className="font-medium">
                         {language === "ar" ? "المدينة:" : "City:"}
                       </span>{" "}
-                      {selectedShipment.sender.senderCity}
+                      {selectedShipment.sender.city}
                     </p>
                   </div>
                 </div>
@@ -950,25 +1526,25 @@ export default function Shipments() {
                       <span className="font-medium">
                         {language === "ar" ? "الاسم:" : "Name:"}
                       </span>{" "}
-                      {selectedShipment.receiver.receiverName}
+                      {selectedShipment.receivers[0]?.name}
                     </p>
                     <p>
                       <span className="font-medium">
                         {language === "ar" ? "الهاتف:" : "Phone:"}
                       </span>{" "}
-                      {selectedShipment.receiver.receiverPhone}
+                      {selectedShipment.receivers[0]?.phone}
                     </p>
                     <p>
                       <span className="font-medium">
                         {language === "ar" ? "العنوان:" : "Address:"}
                       </span>{" "}
-                      {selectedShipment.receiver.receiverCountry}
+                      {selectedShipment.receivers[0]?.country}
                     </p>
                     <p>
                       <span className="font-medium">
                         {language === "ar" ? "المدينة:" : "City:"}
                       </span>{" "}
-                      {selectedShipment.receiver.receiverCity}
+                      {selectedShipment.receivers[0]?.city}
                     </p>
                   </div>
                 </div>
@@ -1004,7 +1580,7 @@ export default function Shipments() {
                     <span className="font-medium">
                       {language === "ar" ? "شركة الشحن:" : "Company:"}
                     </span>{" "}
-                    {selectedShipment.company}
+                    {selectedShipment.shippingCompany.name}
                   </p>
                 </div>
                 <p className="text-sm">
@@ -1026,29 +1602,42 @@ export default function Shipments() {
                     <span className="font-medium">
                       {language === "ar" ? "التكلفة الإجمالية:" : "Total Cost:"}
                     </span>{" "}
-                    {selectedShipment.cost.toLocaleString()} SYP
+                    {selectedShipment.cost.amount.toLocaleString()}{" "}
+                    {selectedShipment.cost.currency}
                   </p>
                   <p>
                     <span className="font-medium">
                       {language === "ar" ? "طريقة الدفع:" : "Payment Method:"}
                     </span>{" "}
-                    {t(`shipment.${selectedShipment.paymentMethod}`)}
+                    {t(`shipment.${selectedShipment.cost.paymentMethod}`)}
                   </p>
                   <p>
                     <span className="font-medium">
                       {language === "ar" ? "تاريخ الإنشاء:" : "Created Date:"}
                     </span>{" "}
-                    {selectedShipment.createdAt}
+                    {formatDate(selectedShipment.createdAt)}
                   </p>
-                  <p>
+                  {getCurrentShipmentLocation(selectedShipment) && (
+                    <p>
+                      <span className="font-medium">
+                        {language === "ar"
+                          ? "الموقع الحالي:"
+                          : "Current Location:"}
+                      </span>{" "}
+                      {getCurrentShipmentLocation(selectedShipment)}
+                    </p>
+                  )}
+                </div>
+                {selectedShipment.weightAdjustment?.note?.trim() && (
+                  <p className="text-sm rounded-md bg-rose-50 border border-rose-300 px-3 py-2 text-rose-900">
                     <span className="font-medium">
                       {language === "ar"
-                        ? "التسليم المتوقع:"
-                        : "Estimated Delivery:"}
-                    </span>{" "}
-                    {selectedShipment.estimatedDelivery}
+                        ? "ملاحظة تصحيح الوزن: "
+                        : "Weight adjustment note: "}
+                    </span>
+                    {selectedShipment.weightAdjustment.note}
                   </p>
-                </div>
+                )}
               </div>
             </div>
           )}
@@ -1060,36 +1649,41 @@ export default function Shipments() {
             >
               {language === "ar" ? "إغلاق" : "Close"}
             </Button>
-            <Button
-              onClick={() =>
-                selectedShipment && handleTrackShipment(selectedShipment)
-              }
-              className="w-full sm:w-auto"
-            >
-              <ExternalLink className="w-4 h-4 mr-2" />
-              {language === "ar" ? "تتبع البوليصة" : "Track Shipment"}
-            </Button>
-            <Button
-              onClick={() =>
-                selectedShipment && handlePrintBill(selectedShipment)
-              }
-              className="w-full sm:w-auto"
-            >
-              <Printer className="w-4 h-4 mr-2" />
-              {language === "ar" ? "طباعة البوليصة" : "Print Bill"}
-            </Button>
-            {selectedShipment?.status === "pending" && (
+            {canTrackShipment(selectedShipment) && (
               <Button
-                variant="destructive"
                 onClick={() =>
-                  selectedShipment && handleCancelShipment(selectedShipment)
+                  selectedShipment && handleTrackShipment(selectedShipment)
                 }
                 className="w-full sm:w-auto"
               >
-                <X className="w-4 h-4 mr-2" />
-                {language === "ar" ? "إلغاء الشحنة" : "Cancel Shipment"}
+                <ExternalLink className="w-4 h-4 mr-2" />
+                {language === "ar" ? "تتبع البوليصة" : "Track Shipment"}
               </Button>
             )}
+            {canUseShipmentDocuments(selectedShipment) && (
+              <Button
+                onClick={() =>
+                  selectedShipment && handlePrintBill(selectedShipment)
+                }
+                className="w-full sm:w-auto"
+              >
+                <Printer className="w-4 h-4 mr-2" />
+                {language === "ar" ? "طباعة البوليصة" : "Print Bill"}
+              </Button>
+            )}
+            {selectedShipment?.status === "pending" &&
+              selectedShipment?.cancellationRequest?.status !== "pending" && (
+                <Button
+                  variant="destructive"
+                  onClick={() =>
+                    selectedShipment && handleCancelShipment(selectedShipment)
+                  }
+                  className="w-full sm:w-auto"
+                >
+                  <X className="w-4 h-4 mr-2" />
+                  {language === "ar" ? "إلغاء الشحنة" : "Cancel Shipment"}
+                </Button>
+              )}
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -22,11 +22,19 @@ import { Badge } from "@/components/ui/badge";
 import { Search, Edit, Trash2, UserCheck, UserX, Download } from "lucide-react";
 import adminService from "@/services/adminService";
 import { toast } from "sonner";
+import { useAuth } from "@/contexts/AuthContext";
+import { useLanguage } from "@/contexts/LanguageContext";
 
 export default function UsersManagement() {
+  const { user } = useAuth();
+  const { language } = useLanguage();
+  const tr = (ar: string, en: string) => (language === "ar" ? ar : en);
+  const isPlatformAdmin = ["admin", "super-admin"].includes(user?.role || "");
   const [users, setUsers] = useState<any[]>([]);
+  const [companies, setCompanies] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [companyId, setCompanyId] = useState("");
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [selectedUser, setSelectedUser] = useState<any>(null);
@@ -36,26 +44,45 @@ export default function UsersManagement() {
     role: "user",
     balanceUSD: 0,
     balanceSYP: 0,
+    shippingCompanyId: "",
   });
 
   useEffect(() => {
     fetchUsers();
-  }, [page, search]);
+  }, [page, search, companyId]);
+
+  useEffect(() => {
+    if (isPlatformAdmin) {
+      fetchCompanies();
+    }
+  }, [isPlatformAdmin]);
 
   const fetchUsers = async () => {
     try {
       setIsLoading(true);
       const response = await adminService.getAllUsers({
         search,
+        companyId: isPlatformAdmin ? companyId || undefined : undefined,
         page,
         limit: 10,
       });
       setUsers(response.data);
       setTotalPages(response.pagination.pages);
     } catch (error: any) {
-      toast.error(error.message || "فشل تحميل المستخدمين");
+      toast.error(
+        error.message || tr("فشل تحميل المستخدمين", "Failed to load users"),
+      );
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const fetchCompanies = async () => {
+    try {
+      const response = await adminService.getAllCompanies({ limit: 100 });
+      setCompanies(response.data);
+    } catch {
+      setCompanies([]);
     }
   };
 
@@ -66,6 +93,10 @@ export default function UsersManagement() {
       role: user.role,
       balanceUSD: user.balance.USD,
       balanceSYP: user.balance.SYP,
+      shippingCompanyId:
+        typeof user.shippingCompanyId === "string"
+          ? user.shippingCompanyId
+          : user.shippingCompanyId?._id || "",
     });
     setIsEditDialogOpen(true);
   };
@@ -74,29 +105,46 @@ export default function UsersManagement() {
     try {
       await adminService.updateUser(selectedUser._id, {
         isActive: editFormData.isActive,
-        role: editFormData.role,
+        role: ["admin", "super-admin"].includes(user?.role || "")
+          ? editFormData.role
+          : undefined,
+        shippingCompanyId: ["admin", "super-admin"].includes(user?.role || "")
+          ? editFormData.shippingCompanyId || null
+          : undefined,
         balance: {
           USD: editFormData.balanceUSD,
           SYP: editFormData.balanceSYP,
         },
       });
-      toast.success("تم تحديث المستخدم بنجاح");
+      toast.success(tr("تم تحديث المستخدم بنجاح", "User updated successfully"));
       setIsEditDialogOpen(false);
       fetchUsers();
     } catch (error: any) {
-      toast.error(error.message || "فشل تحديث المستخدم");
+      toast.error(
+        error.message || tr("فشل تحديث المستخدم", "Failed to update user"),
+      );
     }
   };
 
   const handleDeleteUser = async (userId: string) => {
-    if (!confirm("هل أنت متأكد من حذف هذا المستخدم؟")) return;
+    if (
+      !confirm(
+        tr(
+          "هل أنت متأكد من حذف هذا المستخدم؟",
+          "Are you sure you want to delete this user?",
+        ),
+      )
+    )
+      return;
 
     try {
       await adminService.deleteUser(userId);
-      toast.success("تم حذف المستخدم بنجاح");
+      toast.success(tr("تم حذف المستخدم بنجاح", "User deleted successfully"));
       fetchUsers();
     } catch (error: any) {
-      toast.error(error.message || "فشل حذف المستخدم");
+      toast.error(
+        error.message || tr("فشل حذف المستخدم", "Failed to delete user"),
+      );
     }
   };
 
@@ -108,19 +156,25 @@ export default function UsersManagement() {
       a.href = url;
       a.download = `users-${Date.now()}.xlsx`;
       a.click();
-      toast.success("تم تصدير البيانات بنجاح");
+      toast.success(
+        tr("تم تصدير البيانات بنجاح", "Data exported successfully"),
+      );
     } catch (error: any) {
-      toast.error(error.message || "فشل تصدير البيانات");
+      toast.error(
+        error.message || tr("فشل تصدير البيانات", "Failed to export data"),
+      );
     }
   };
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold text-gray-900">إدارة المستخدمين</h1>
+        <h1 className="text-3xl font-bold text-gray-900">
+          {tr("إدارة المستخدمين", "Users Management")}
+        </h1>
         <Button onClick={handleExportUsers} variant="outline">
           <Download className="w-4 h-4 mr-2" />
-          تصدير Excel
+          {tr("تصدير Excel", "Export Excel")}
         </Button>
       </div>
 
@@ -130,12 +184,35 @@ export default function UsersManagement() {
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
               <Input
-                placeholder="البحث بالاسم، البريد الإلكتروني، أو رقم الهاتف..."
+                placeholder={tr(
+                  "البحث بالاسم، البريد الإلكتروني، أو رقم الهاتف...",
+                  "Search by name, email, or phone...",
+                )}
                 value={search}
-                onChange={(e) => setSearch(e.target.value)}
+                onChange={(e) => {
+                  setSearch(e.target.value);
+                  setPage(1);
+                }}
                 className="pl-10"
               />
             </div>
+            {isPlatformAdmin && (
+              <select
+                value={companyId}
+                onChange={(e) => {
+                  setCompanyId(e.target.value);
+                  setPage(1);
+                }}
+                className="w-56 px-3 py-2 border border-gray-300 rounded-lg"
+              >
+                <option value="">{tr("كل الشركات", "All Companies")}</option>
+                {companies.map((company) => (
+                  <option key={company._id} value={company._id}>
+                    {company.name}
+                  </option>
+                ))}
+              </select>
+            )}
           </div>
         </CardHeader>
         <CardContent>
@@ -148,14 +225,17 @@ export default function UsersManagement() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>الاسم</TableHead>
-                    <TableHead>البريد الإلكتروني</TableHead>
-                    <TableHead>الهاتف</TableHead>
-                    <TableHead>الرصيد (USD)</TableHead>
-                    <TableHead>الرصيد (SYP)</TableHead>
-                    <TableHead>الدور</TableHead>
-                    <TableHead>الحالة</TableHead>
-                    <TableHead>الإجراءات</TableHead>
+                    <TableHead>{tr("الاسم", "Name")}</TableHead>
+                    <TableHead>{tr("البريد الإلكتروني", "Email")}</TableHead>
+                    <TableHead>{tr("الهاتف", "Phone")}</TableHead>
+                    <TableHead>{tr("الرصيد (USD)", "Balance (USD)")}</TableHead>
+                    <TableHead>{tr("الرصيد (SYP)", "Balance (SYP)")}</TableHead>
+                    <TableHead>
+                      {tr("شركة الشحن", "Shipping Company")}
+                    </TableHead>
+                    <TableHead>{tr("الدور", "Role")}</TableHead>
+                    <TableHead>{tr("الحالة", "Status")}</TableHead>
+                    <TableHead>{tr("الإجراءات", "Actions")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -166,6 +246,11 @@ export default function UsersManagement() {
                       <TableCell>{user.phone}</TableCell>
                       <TableCell>${user.balance.USD.toFixed(2)}</TableCell>
                       <TableCell>{user.balance.SYP.toLocaleString()}</TableCell>
+                      <TableCell>
+                        {typeof user.shippingCompanyId === "string"
+                          ? user.shippingCompanyId
+                          : user.shippingCompanyId?.name || "-"}
+                      </TableCell>
                       <TableCell>
                         <Badge
                           variant={
@@ -179,12 +264,12 @@ export default function UsersManagement() {
                         {user.isActive ? (
                           <Badge variant="default" className="bg-green-600">
                             <UserCheck className="w-3 h-3 mr-1" />
-                            نشط
+                            {tr("نشط", "Active")}
                           </Badge>
                         ) : (
                           <Badge variant="destructive">
                             <UserX className="w-3 h-3 mr-1" />
-                            غير نشط
+                            {tr("غير نشط", "Inactive")}
                           </Badge>
                         )}
                       </TableCell>
@@ -201,6 +286,7 @@ export default function UsersManagement() {
                             size="sm"
                             variant="destructive"
                             onClick={() => handleDeleteUser(user._id)}
+                            disabled={user.role === "company-admin"}
                           >
                             <Trash2 className="w-4 h-4" />
                           </Button>
@@ -214,7 +300,10 @@ export default function UsersManagement() {
               {/* Pagination */}
               <div className="flex items-center justify-between mt-4">
                 <p className="text-sm text-gray-600">
-                  صفحة {page} من {totalPages}
+                  {tr(
+                    `صفحة ${page} من ${totalPages}`,
+                    `Page ${page} of ${totalPages}`,
+                  )}
                 </p>
                 <div className="flex gap-2">
                   <Button
@@ -223,7 +312,7 @@ export default function UsersManagement() {
                     onClick={() => setPage(page - 1)}
                     disabled={page === 1}
                   >
-                    السابق
+                    {tr("السابق", "Previous")}
                   </Button>
                   <Button
                     variant="outline"
@@ -231,7 +320,7 @@ export default function UsersManagement() {
                     onClick={() => setPage(page + 1)}
                     disabled={page === totalPages}
                   >
-                    التالي
+                    {tr("التالي", "Next")}
                   </Button>
                 </div>
               </div>
@@ -244,11 +333,11 @@ export default function UsersManagement() {
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>تعديل المستخدم</DialogTitle>
+            <DialogTitle>{tr("تعديل المستخدم", "Edit User")}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <div>
-              <Label>الحالة</Label>
+              <Label>{tr("الحالة", "Status")}</Label>
               <select
                 value={editFormData.isActive ? "active" : "inactive"}
                 onChange={(e) =>
@@ -259,26 +348,57 @@ export default function UsersManagement() {
                 }
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg"
               >
-                <option value="active">نشط</option>
-                <option value="inactive">غير نشط</option>
+                <option value="active">{tr("نشط", "Active")}</option>
+                <option value="inactive">{tr("غير نشط", "Inactive")}</option>
               </select>
             </div>
+            {["admin", "super-admin"].includes(user?.role || "") && (
+              <>
+                <div>
+                  <Label>{tr("الدور", "Role")}</Label>
+                  <select
+                    value={editFormData.role}
+                    onChange={(e) =>
+                      setEditFormData({ ...editFormData, role: e.target.value })
+                    }
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  >
+                    <option value="user">{tr("مستخدم", "User")}</option>
+                    <option value="company-admin">
+                      {tr("مدير شركة", "Company Admin")}
+                    </option>
+                    <option value="admin">
+                      {tr("مدير منصة", "Platform Admin")}
+                    </option>
+                    <option value="super-admin">
+                      {tr("مدير أعلى", "Super Admin")}
+                    </option>
+                  </select>
+                </div>
+                <div>
+                  <Label>{tr("شركة الشحن", "Shipping Company")}</Label>
+                  <select
+                    value={editFormData.shippingCompanyId}
+                    onChange={(e) =>
+                      setEditFormData({
+                        ...editFormData,
+                        shippingCompanyId: e.target.value,
+                      })
+                    }
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  >
+                    <option value="">{tr("بدون شركة", "No Company")}</option>
+                    {companies.map((company) => (
+                      <option key={company._id} value={company._id}>
+                        {company.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </>
+            )}
             <div>
-              <Label>الدور</Label>
-              <select
-                value={editFormData.role}
-                onChange={(e) =>
-                  setEditFormData({ ...editFormData, role: e.target.value })
-                }
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-              >
-                <option value="user">مستخدم</option>
-                <option value="admin">مدير</option>
-                <option value="super-admin">مدير أعلى</option>
-              </select>
-            </div>
-            <div>
-              <Label>الرصيد (USD)</Label>
+              <Label>{tr("الرصيد (USD)", "Balance (USD)")}</Label>
               <Input
                 type="number"
                 value={editFormData.balanceUSD}
@@ -291,7 +411,7 @@ export default function UsersManagement() {
               />
             </div>
             <div>
-              <Label>الرصيد (SYP)</Label>
+              <Label>{tr("الرصيد (SYP)", "Balance (SYP)")}</Label>
               <Input
                 type="number"
                 value={editFormData.balanceSYP}
@@ -309,9 +429,11 @@ export default function UsersManagement() {
               variant="outline"
               onClick={() => setIsEditDialogOpen(false)}
             >
-              إلغاء
+              {tr("إلغاء", "Cancel")}
             </Button>
-            <Button onClick={handleUpdateUser}>حفظ التغييرات</Button>
+            <Button onClick={handleUpdateUser}>
+              {tr("حفظ التغييرات", "Save Changes")}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

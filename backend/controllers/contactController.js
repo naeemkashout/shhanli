@@ -1,6 +1,59 @@
 const Contact = require("../models/Contact");
 const ActivityLog = require("../models/ActivityLog");
 
+const isPlatformAdmin = (user) => ["admin", "super-admin"].includes(user.role);
+const isCompanyAdmin = (user) => user.role === "company-admin";
+
+const canAccessContact = (contact, user) => {
+  if (isPlatformAdmin(user)) return true;
+
+  if (isCompanyAdmin(user)) {
+    return (
+      user.shippingCompanyId &&
+      contact.shippingCompanyId &&
+      contact.shippingCompanyId.toString() === user.shippingCompanyId.toString()
+    );
+  }
+
+  return contact.userId.toString() === user.id;
+};
+
+const normalizeContactPayload = (payload = {}) => {
+  const next = { ...payload };
+
+  const trimFields = [
+    "name",
+    "phone",
+    "email",
+    "address",
+    "street",
+    "country",
+    "state",
+    "city",
+    "companyName",
+    "commercialRegister",
+  ];
+
+  trimFields.forEach((field) => {
+    if (typeof next[field] === "string") {
+      next[field] = next[field].trim();
+    }
+  });
+
+  if (typeof next.phone === "string") {
+    next.phone = next.phone.replace(/\s+/g, "");
+  }
+
+  if (typeof next.email === "string") {
+    next.email = next.email.toLowerCase();
+    if (!next.email) {
+      delete next.email;
+    }
+  }
+
+  return next;
+};
+
 // @desc    Get user contacts
 // @route   GET /api/contacts
 // @access  Private
@@ -8,7 +61,26 @@ exports.getUserContacts = async (req, res) => {
   try {
     const { search, type, clientType, page = 1, limit = 10 } = req.query;
 
-    const query = { userId: req.user.id, isActive: true };
+    const query = { isActive: true };
+
+    if (isCompanyAdmin(req.user)) {
+      if (!req.user.shippingCompanyId) {
+        return res.json({
+          success: true,
+          data: [],
+          pagination: {
+            page: parseInt(page),
+            limit: parseInt(limit),
+            total: 0,
+            pages: 0,
+          },
+        });
+      }
+
+      query.shippingCompanyId = req.user.shippingCompanyId;
+    } else if (!isPlatformAdmin(req.user)) {
+      query.userId = req.user.id;
+    }
 
     // Add filters
     if (type && type !== "all") {
@@ -62,8 +134,9 @@ exports.getUserContacts = async (req, res) => {
 exports.createContact = async (req, res) => {
   try {
     const contactData = {
-      ...req.body,
+      ...normalizeContactPayload(req.body),
       userId: req.user.id,
+      shippingCompanyId: req.user.shippingCompanyId || null,
     };
 
     const contact = await Contact.create(contactData);
@@ -94,6 +167,14 @@ exports.createContact = async (req, res) => {
       });
     }
 
+    if (error.name === "ValidationError") {
+      const firstMessage = Object.values(error.errors || {})[0]?.message;
+      return res.status(400).json({
+        success: false,
+        message: firstMessage || "Invalid contact data",
+      });
+    }
+
     res.status(500).json({
       success: false,
       message: "Error creating contact",
@@ -117,16 +198,18 @@ exports.updateContact = async (req, res) => {
     }
 
     // Check ownership
-    if (contact.userId.toString() !== req.user.id) {
+    if (!canAccessContact(contact, req.user)) {
       return res.status(403).json({
         success: false,
         message: "Not authorized to update this contact",
       });
     }
 
+    const updateData = normalizeContactPayload(req.body);
+
     const updatedContact = await Contact.findByIdAndUpdate(
       req.params.id,
-      req.body,
+      updateData,
       { new: true, runValidators: true },
     );
 
@@ -156,6 +239,14 @@ exports.updateContact = async (req, res) => {
       });
     }
 
+    if (error.name === "ValidationError") {
+      const firstMessage = Object.values(error.errors || {})[0]?.message;
+      return res.status(400).json({
+        success: false,
+        message: firstMessage || "Invalid contact data",
+      });
+    }
+
     res.status(500).json({
       success: false,
       message: "Error updating contact",
@@ -179,7 +270,7 @@ exports.deleteContact = async (req, res) => {
     }
 
     // Check ownership
-    if (contact.userId.toString() !== req.user.id) {
+    if (!canAccessContact(contact, req.user)) {
       return res.status(403).json({
         success: false,
         message: "Not authorized to delete this contact",
@@ -228,7 +319,7 @@ exports.getContactById = async (req, res) => {
     }
 
     // Check ownership
-    if (contact.userId.toString() !== req.user.id) {
+    if (!canAccessContact(contact, req.user)) {
       return res.status(403).json({
         success: false,
         message: "Not authorized to access this contact",

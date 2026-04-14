@@ -20,8 +20,11 @@ const translations = {
     "nav.dashboard": "لوحة التحكم",
     "nav.createShipment": "إنشاء شحنة",
     "nav.shipments": "الشحنات",
+    "nav.companies": "الشركات",
     "nav.contacts": "العملاء",
     "nav.balance": "الرصيد",
+    "nav.notifications": "الإشعارات",
+    "nav.financialTransactions": "المعاملات المالية",
     "nav.reports": "التقارير",
     "nav.settings": "الإعدادات",
     "nav.logout": "تسجيل الخروج",
@@ -347,6 +350,9 @@ const translations = {
     // Balance
     "balance.title": "الرصيد",
     "balance.subtitle": "إدارة رصيد محفظتك وتاريخ المعاملات",
+    "financialTransactions.title": "المعاملات المالية",
+    "financialTransactions.subtitle":
+      "عرض وتتبع جميع المعاملات المالية مع البحث والفلاتر",
     "balance.usdBalance": "الرصيد بالدولار الأمريكي",
     "balance.sypBalance": "الرصيد بالليرة السورية",
     "balance.availableBalance": "الرصيد المتاح",
@@ -467,6 +473,10 @@ const translations = {
     completed: "مكتمل",
     pending: "قيد الانتظار",
     failed: "فاشل",
+    cancelled: "ملغي",
+    refund: "استرداد",
+    fee: "رسوم",
+    commission: "عمولة",
     transactionHistory: "سجل المعاملات",
     recentTransactions: "آخر المعاملات",
     transactionsCount: "{{filtered}} من {{total}} معاملة",
@@ -507,6 +517,22 @@ const translations = {
     "balance.International balance": "الرصيد الدولي",
     "balance.SYP.currency": " الليرة السورية - للشحن المحلي",
     "balance.USD.currency": " الدولار الأمريكي - للشحن الدولي",
+
+    // Notifications
+    "notifications.title": "الإشعارات",
+    "notifications.subtitle": "تابع آخر تحديثات الشحنات والمحفظة",
+    "notifications.unreadCount": "غير المقروء: {count}",
+    "notifications.markAllRead": "تحديد الكل كمقروء",
+    "notifications.filterAll": "كل الإشعارات",
+    "notifications.filterUnread": "غير المقروءة فقط",
+    "notifications.empty": "لا توجد إشعارات حالياً",
+    "notifications.markRead": "تحديد كمقروء",
+    "notifications.loadError": "فشل تحميل الإشعارات",
+    "notifications.markReadError": "فشل تحديث الإشعار",
+    "notifications.markAllReadSuccess": "تم تحديد جميع الإشعارات كمقروءة",
+    "notifications.typeShipment": "الشحنات",
+    "notifications.typeWallet": "المحفظة",
+    "notifications.typeSystem": "النظام",
 
     // Client
     "sender.title": "المرسل",
@@ -563,12 +589,16 @@ const translations = {
     "package.enterDescription": "أدخل وصف محتوى الطرد",
     "package.value": "قيمة الطرد",
     "package.fragile": "قابل للكسر",
+    "package.weightCalculation": "احتساب وزن الحمولة",
+    "package.actualWeight": "الوزن الفعلي",
+    "package.volumetricWeight": "الوزن الحجمي",
+    "package.billingWeight": "الوزن المعتمد للفوترة",
 
     // Payment
     "payment.cod.desc": "سيتم تحصيل المبلغ عند التسليم",
 
     // Currency
-    "currency.usd": "دولار أمريكي",
+    "currency.usd": "$",
     "currency.syp": "ل.س",
     "currency.selectCurrency": "اختر العملة",
 
@@ -682,8 +712,11 @@ const translations = {
     "nav.dashboard": "Dashboard",
     "nav.createShipment": "Create Shipment",
     "nav.shipments": "Shipments",
+    "nav.companies": "Companies",
     "nav.contacts": "Senders/Receivers",
     "nav.balance": "Balance",
+    "nav.notifications": "Notifications",
+    "nav.financialTransactions": "Financial Transactions",
     "nav.reports": "Reports",
     "nav.settings": "Settings",
     "nav.logout": "Logout",
@@ -1015,6 +1048,9 @@ const translations = {
     // Balance
     "balance.title": "Balance",
     "balance.subtitle": "Manage your wallet balance and transaction history",
+    "financialTransactions.title": "Financial Transactions",
+    "financialTransactions.subtitle":
+      "View and track all financial transactions with search and filters",
     "balance.usdBalance": "USD Balance",
     "balance.sypBalance": "SYP Balance",
     "balance.availableBalance": "Available Balance",
@@ -1140,6 +1176,10 @@ const translations = {
     completed: "Completed",
     pending: "Pending",
     failed: "Failed",
+    cancelled: "Cancelled",
+    refund: "Refund",
+    fee: "Fee",
+    commission: "Commission",
     transactionHistory: "Transaction History",
     recentTransactions: "Recent Transactions",
     transactionsCount: "{{filtered}} of {{total}} transactions",
@@ -1174,6 +1214,22 @@ const translations = {
     availableBalance: "Available Balance",
     urgentWithdrawalRequest: "Urgent withdrawal request",
     insufficientVerification: "Insufficient verification",
+
+    // Notifications
+    "notifications.title": "Notifications",
+    "notifications.subtitle": "Stay updated with shipment and wallet activity",
+    "notifications.unreadCount": "Unread: {count}",
+    "notifications.markAllRead": "Mark all as read",
+    "notifications.filterAll": "All notifications",
+    "notifications.filterUnread": "Unread only",
+    "notifications.empty": "No notifications yet",
+    "notifications.markRead": "Mark as read",
+    "notifications.loadError": "Failed to load notifications",
+    "notifications.markReadError": "Failed to update notification",
+    "notifications.markAllReadSuccess": "All notifications marked as read",
+    "notifications.typeShipment": "Shipments",
+    "notifications.typeWallet": "Wallet",
+    "notifications.typeSystem": "System",
 
     // Client
     "sender.title": "Sender",
@@ -1230,12 +1286,16 @@ const translations = {
     "package.enterDescription": "Enter package content description",
     "package.value": "Package Value",
     "package.fragile": "Fragile",
+    "package.weightCalculation": "Payload Weight Calculation",
+    "package.actualWeight": "Actual Weight",
+    "package.volumetricWeight": "Volumetric Weight",
+    "package.billingWeight": "Chargeable Weight",
 
     // Payment
     "payment.cod.desc": "Payment will be collected upon delivery",
 
     // Currency
-    "currency.usd": "US Dollar",
+    "currency.usd": "$",
     "currency.syp": "Syrian Pound",
     "currency.selectCurrency": "Select Currency",
 

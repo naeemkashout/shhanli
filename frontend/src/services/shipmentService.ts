@@ -100,9 +100,9 @@ class ShipmentService {
     }
   }
 
-  async cancelShipment(id: string): Promise<any> {
+  async cancelShipment(id: string, reason: string): Promise<any> {
     try {
-      const response = await api.put(`/shipments/${id}/cancel`);
+      const response = await api.put(`/shipments/${id}/cancel`, { reason });
       return response.data;
     } catch (error) {
       throw new Error(handleApiError(error));

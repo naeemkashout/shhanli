@@ -9,94 +9,243 @@ import {
   Users,
   ArrowRight,
   Wallet,
-  TrendingUp,
+  Globe,
+  MapPin,
+  XCircle,
+  Truck,
   Eye,
   EyeOff,
 } from "lucide-react";
 import { useLanguage } from "@/contexts/LanguageContext";
+import { useAuth } from "@/contexts/AuthContext";
 import { Link } from "react-router-dom";
+import shipmentService from "@/services/shipmentService";
+import walletService from "@/services/walletService";
+import { toast } from "sonner";
+import { io, Socket } from "socket.io-client";
 
 export default function Dashboard() {
   const { t, isRTL, language } = useLanguage();
+  const { user } = useAuth();
 
   const [showBalance, setShowBalance] = React.useState(true);
   const [stats, setStats] = React.useState({
     totalShipments: 0,
+    localShipments: 0,
+    internationalShipments: 0,
     pendingShipments: 0,
+    inTransitShipments: 0,
     completedShipments: 0,
+    cancelledShipments: 0,
     walletBalance: {
       USD: 0,
       SYP: 0,
     },
   });
-  const [recentShipments, setRecentShipments] = React.useState([]);
+  const [recentShipments, setRecentShipments] = React.useState<any[]>([]);
   const [loading, setLoading] = React.useState(true);
+
+  const loadWalletBalance = React.useCallback(async () => {
+    try {
+      const response = await walletService.getBalance();
+      const balance = response?.balance || {};
+
+      setStats((prev) => ({
+        ...prev,
+        walletBalance: {
+          USD: Number(balance.USD) || 0,
+          SYP: Number(balance.SYP) || 0,
+        },
+      }));
+    } catch {
+      // Keep UI stable if wallet API fails.
+    }
+  }, []);
 
   // Load dashboard data
   React.useEffect(() => {
     const loadDashboardData = async () => {
       try {
-        // TODO: Implement API calls to get real data
-        // For now, show empty state
-        setStats({
-          totalShipments: 0,
-          pendingShipments: 0,
-          completedShipments: 0,
-          walletBalance: {
-            USD: 0,
-            SYP: 0,
-          },
-        });
-        setRecentShipments([]);
-      } catch (error) {
+        setLoading(true);
+
+        await loadWalletBalance();
+
+        // Load shipments from API (all pages) to calculate accurate stats.
+        const pageLimit = 100;
+        let currentPage = 1;
+        let totalPages = 1;
+        let allShipments: any[] = [];
+        let totalShipmentsCount = 0;
+
+        while (currentPage <= totalPages) {
+          const shipmentsResponse = await shipmentService.getUserShipments({
+            page: currentPage,
+            limit: pageLimit,
+          });
+
+          if (
+            !shipmentsResponse.success ||
+            !Array.isArray(shipmentsResponse.data)
+          ) {
+            break;
+          }
+
+          allShipments = [...allShipments, ...shipmentsResponse.data];
+          totalPages = shipmentsResponse.pagination?.pages || 1;
+          if (!totalShipmentsCount) {
+            totalShipmentsCount = shipmentsResponse.pagination?.total || 0;
+          }
+          currentPage += 1;
+        }
+
+        setRecentShipments(allShipments.slice(0, 5));
+
+        const total = totalShipmentsCount || allShipments.length;
+        const local = allShipments.filter(
+          (s: any) => s.shippingType === "local",
+        ).length;
+        const international = allShipments.filter(
+          (s: any) => s.shippingType === "international",
+        ).length;
+        const pending = allShipments.filter(
+          (s: any) => s.status === "pending",
+        ).length;
+        const inTransit = allShipments.filter(
+          (s: any) => s.status === "in-transit",
+        ).length;
+        const completed = allShipments.filter(
+          (s: any) => s.status === "delivered",
+        ).length;
+        const cancelled = allShipments.filter(
+          (s: any) => s.status === "cancelled",
+        ).length;
+
+        setStats((prev) => ({
+          ...prev,
+          totalShipments: total,
+          localShipments: local,
+          internationalShipments: international,
+          pendingShipments: pending,
+          inTransitShipments: inTransit,
+          completedShipments: completed,
+          cancelledShipments: cancelled,
+        }));
+      } catch (error: any) {
         console.error("Error loading dashboard data:", error);
+        // Don't show error toast for empty state
+        if (error.message && !error.message.includes("No shipments")) {
+          toast.error(
+            language === "ar"
+              ? "حدث خطأ في تحميل البيانات"
+              : "Error loading dashboard data",
+          );
+        }
       } finally {
         setLoading(false);
       }
     };
 
     loadDashboardData();
-  }, []);
+  }, [user, language, loadWalletBalance]);
+
+  React.useEffect(() => {
+    const userId = String(user?.id || "").trim();
+    if (!userId) return;
+
+    const apiBaseUrl =
+      import.meta.env.VITE_API_URL || "http://localhost:5001/api";
+    const socketUrl = apiBaseUrl.replace(/\/api\/?$/, "");
+
+    const socket: Socket = io(socketUrl, {
+      transports: ["websocket", "polling"],
+      withCredentials: true,
+    });
+
+    socket.on("connect", () => {
+      socket.emit("join-user-room", userId);
+    });
+
+    socket.on("new-notification", (notification: any) => {
+      if (notification?.type === "wallet") {
+        loadWalletBalance();
+      }
+    });
+
+    return () => {
+      socket.disconnect();
+    };
+  }, [user?.id, loadWalletBalance]);
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case "delivered":
-        return "text-green-600 bg-green-100";
+      case "pending":
+        return "text-amber-700 bg-amber-100";
+      case "confirmed":
+        return "text-sky-700 bg-sky-100";
+      case "picked-up":
+        return "text-violet-700 bg-violet-100";
       case "in-transit":
         return "text-blue-600 bg-blue-100";
-      case "pending":
-        return "text-yellow-600 bg-yellow-100";
+      case "out-for-delivery":
+        return "text-fuchsia-700 bg-fuchsia-100";
+      case "delivered":
+        return "text-green-600 bg-green-100";
+      case "cancelled":
+        return "text-red-600 bg-red-100";
+      case "returned":
+        return "text-slate-700 bg-slate-200";
       default:
         return "text-gray-600 bg-gray-100";
     }
   };
 
   const formatAmountUSD = (amount: number) => {
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: "USD",
-    }).format(amount);
+    const formatted = new Intl.NumberFormat("en-US", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(Number(amount || 0));
+
+    return `${formatted} $`;
   };
 
   const formatAmountSYP = (amount: number) => {
-    return (
-      new Intl.NumberFormat(isRTL ? "ar-SY" : "en-US").format(amount) +
-      " " +
-      t("currency.syp")
-    );
+    const formatted = new Intl.NumberFormat("en-US", {
+      maximumFractionDigits: 0,
+    }).format(Number(amount || 0));
+
+    return `${formatted} ${language === "ar" ? "ل.س" : "SYP"}`;
   };
+
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString);
+    return date.toLocaleDateString(isRTL ? "ar-SY" : "en-US", {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    });
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <Package className="w-12 h-12 text-gray-400 mx-auto mb-4 animate-pulse" />
+          <p className="text-gray-600">
+            {language === "ar" ? "جاري التحميل..." : "Loading..."}
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50" dir={isRTL ? "rtl" : "ltr"}>
       <div className="max-w-7xl mx-auto space-y-4 sm:space-y-6">
         {/* Header - Mobile Optimized */}
-        <div className="text-center sm:text-right">
-          <h1
-            className={`
-    text-2xl sm:text-3xl font-bold text-gray-900
-    ${language === "ar" ? "text-right" : "text-left"}
-  `}
-          >
+        <div
+          className={`text-center ${language === "ar" ? "sm:text-right" : "sm:text-left"}`}
+        >
+          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">
             {t("dashboard.welcome")}
           </h1>
         </div>
@@ -109,12 +258,14 @@ export default function Dashboard() {
                 <div className="p-2 sm:p-3 bg-white/20 rounded-lg sm:rounded-xl">
                   <Wallet className="w-5 h-5 sm:w-7 sm:h-7" />
                 </div>
-                <div className="flex-1">
+                <div
+                  className={`flex-1 ${language === "ar" ? "text-right" : "text-left"}`}
+                >
                   <h2 className="text-base sm:text-lg font-semibold mb-2">
                     {t("dashboard.walletBalance")}
                   </h2>
                   <div className="space-y-1">
-                    <div className="flex items-center gap-2 sm:gap-3">
+                    <div className="flex items-center justify-between sm:justify-start gap-2 sm:gap-3">
                       <span className="text-xs sm:text-sm opacity-90">
                         USD:
                       </span>
@@ -128,9 +279,9 @@ export default function Dashboard() {
                         </span>
                       )}
                     </div>
-                    <div className="flex items-center gap-2 sm:gap-3">
+                    <div className="flex items-center justify-between sm:justify-start gap-2 sm:gap-3">
                       <span className="text-xs sm:text-sm opacity-90">
-                        SYP:
+                        {language === "ar" ? "ل.س:" : "SYP:"}
                       </span>
                       {showBalance ? (
                         <span className="text-lg sm:text-xl font-bold">
@@ -145,7 +296,7 @@ export default function Dashboard() {
                   </div>
                 </div>
               </div>
-              <div className="flex items-center gap-2 sm:gap-3 w-full sm:w-auto justify-end">
+              <div className="flex items-center gap-2 sm:gap-3 w-full sm:w-auto justify-between sm:justify-end">
                 <Button
                   variant="ghost"
                   size="sm"
@@ -163,7 +314,9 @@ export default function Dashboard() {
                     variant="secondary"
                     className="bg-white text-blue-600 hover:bg-gray-100 min-h-[44px]"
                   >
-                    <Plus className="w-4 h-4 mr-2" />
+                    <Plus
+                      className={`w-4 h-4 ${language === "ar" ? "ml-2" : "mr-2"}`}
+                    />
                     <span className="hidden sm:inline">
                       {t("dashboard.chargeWallet")}
                     </span>
@@ -176,21 +329,17 @@ export default function Dashboard() {
         </div>
 
         {/* Stats Cards - Mobile Responsive Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
-          {/* Total Shipments */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+          {/* All Statuses */}
           <Card className="hover:shadow-lg transition-shadow">
             <CardContent className="p-4 sm:p-5">
               <div className="flex items-center justify-between">
                 <div className="flex-1">
                   <p className="text-xs sm:text-sm font-medium text-gray-600 mb-1">
-                    {t("dashboard.totalShipmentsCount")}
+                    {language === "ar" ? "جميع الشحنات" : "All Shipments"}
                   </p>
                   <p className="text-xl sm:text-2xl font-bold text-gray-900">
                     {stats.totalShipments}
-                  </p>
-                  <p className="text-xs text-gray-500 mt-1">
-                    <TrendingUp className="w-3 h-3 inline mr-1" />
-                    +12% {t("dashboard.monthlyGrowth")}
                   </p>
                 </div>
                 <div className="p-2 sm:p-3 bg-blue-100 rounded-lg sm:rounded-xl">
@@ -211,10 +360,6 @@ export default function Dashboard() {
                   <p className="text-xl sm:text-2xl font-bold text-gray-900">
                     {stats.pendingShipments}
                   </p>
-                  <p className="text-xs text-gray-500 mt-1">
-                    <TrendingUp className="w-3 h-3 inline mr-1" />
-                    +5% {t("dashboard.monthlyGrowth")}
-                  </p>
                 </div>
                 <div className="p-2 sm:p-3 bg-yellow-100 rounded-lg sm:rounded-xl">
                   <Clock className="w-5 h-5 sm:w-6 sm:h-6 text-yellow-600" />
@@ -223,8 +368,27 @@ export default function Dashboard() {
             </CardContent>
           </Card>
 
+          {/* In Transit Shipments */}
+          <Card className="hover:shadow-lg transition-shadow">
+            <CardContent className="p-4 sm:p-5">
+              <div className="flex items-center justify-between">
+                <div className="flex-1">
+                  <p className="text-xs sm:text-sm font-medium text-gray-600 mb-1">
+                    {language === "ar" ? "قيد النقل" : "In Transit"}
+                  </p>
+                  <p className="text-xl sm:text-2xl font-bold text-gray-900">
+                    {stats.inTransitShipments}
+                  </p>
+                </div>
+                <div className="p-2 sm:p-3 bg-cyan-100 rounded-lg sm:rounded-xl">
+                  <Truck className="w-5 h-5 sm:w-6 sm:h-6 text-cyan-600" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
           {/* Completed Shipments */}
-          <Card className="hover:shadow-lg transition-shadow sm:col-span-2 lg:col-span-1">
+          <Card className="hover:shadow-lg transition-shadow">
             <CardContent className="p-4 sm:p-5">
               <div className="flex items-center justify-between">
                 <div className="flex-1">
@@ -234,13 +398,68 @@ export default function Dashboard() {
                   <p className="text-xl sm:text-2xl font-bold text-gray-900">
                     {stats.completedShipments}
                   </p>
-                  <p className="text-xs text-gray-500 mt-1">
-                    <TrendingUp className="w-3 h-3 inline mr-1" />
-                    +18% {t("dashboard.monthlyGrowth")}
-                  </p>
                 </div>
                 <div className="p-2 sm:p-3 bg-green-100 rounded-lg sm:rounded-xl">
                   <CheckCircle className="w-5 h-5 sm:w-6 sm:h-6 text-green-600" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Cancelled Shipments */}
+          <Card className="hover:shadow-lg transition-shadow">
+            <CardContent className="p-4 sm:p-5">
+              <div className="flex items-center justify-between">
+                <div className="flex-1">
+                  <p className="text-xs sm:text-sm font-medium text-gray-600 mb-1">
+                    {language === "ar" ? "الشحنات الملغاة" : "Cancelled"}
+                  </p>
+                  <p className="text-xl sm:text-2xl font-bold text-gray-900">
+                    {stats.cancelledShipments}
+                  </p>
+                </div>
+                <div className="p-2 sm:p-3 bg-red-100 rounded-lg sm:rounded-xl">
+                  <XCircle className="w-5 h-5 sm:w-6 sm:h-6 text-red-600" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Local Shipments */}
+          <Card className="hover:shadow-lg transition-shadow">
+            <CardContent className="p-4 sm:p-5">
+              <div className="flex items-center justify-between">
+                <div className="flex-1">
+                  <p className="text-xs sm:text-sm font-medium text-gray-600 mb-1">
+                    {language === "ar" ? "الشحنات المحلية" : "Local Shipments"}
+                  </p>
+                  <p className="text-xl sm:text-2xl font-bold text-gray-900">
+                    {stats.localShipments}
+                  </p>
+                </div>
+                <div className="p-2 sm:p-3 bg-emerald-100 rounded-lg sm:rounded-xl">
+                  <MapPin className="w-5 h-5 sm:w-6 sm:h-6 text-emerald-600" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* International Shipments */}
+          <Card className="hover:shadow-lg transition-shadow">
+            <CardContent className="p-4 sm:p-5">
+              <div className="flex items-center justify-between">
+                <div className="flex-1">
+                  <p className="text-xs sm:text-sm font-medium text-gray-600 mb-1">
+                    {language === "ar"
+                      ? "الشحنات الدولية"
+                      : "International Shipments"}
+                  </p>
+                  <p className="text-xl sm:text-2xl font-bold text-gray-900">
+                    {stats.internationalShipments}
+                  </p>
+                </div>
+                <div className="p-2 sm:p-3 bg-indigo-100 rounded-lg sm:rounded-xl">
+                  <Globe className="w-5 h-5 sm:w-6 sm:h-6 text-indigo-600" />
                 </div>
               </div>
             </CardContent>
@@ -260,8 +479,12 @@ export default function Dashboard() {
                   <span className="hidden sm:inline">
                     {t("dashboard.viewAllShipments")}
                   </span>
-                  <span className="sm:hidden">عرض الكل</span>
-                  <ArrowRight className="w-4 h-4 ml-2" />
+                  <span className="sm:hidden">
+                    {language === "ar" ? "عرض الكل" : "View All"}
+                  </span>
+                  <ArrowRight
+                    className={`w-4 h-4 ${language === "ar" ? "mr-2" : "ml-2"}`}
+                  />
                 </Button>
               </Link>
             </CardHeader>
@@ -270,7 +493,7 @@ export default function Dashboard() {
                 {recentShipments.length > 0 ? (
                   recentShipments.map((shipment) => (
                     <div
-                      key={shipment.id}
+                      key={shipment._id}
                       className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
                     >
                       <div className="flex items-center gap-3 flex-1 min-w-0">
@@ -279,29 +502,30 @@ export default function Dashboard() {
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="font-medium text-gray-900 text-sm truncate">
-                            {shipment.id}
+                            {shipment.trackingNumber}
                           </p>
                           <p className="text-sm text-gray-600 truncate">
-                            {t("shipments.fromTo", {
-                              from: shipment.from,
-                              to: shipment.to,
-                            })}
+                            {language === "ar"
+                              ? `من ${shipment.sender.name} إلى ${shipment.receivers[0]?.name}`
+                              : `From ${shipment.sender.name} to ${shipment.receivers[0]?.name}`}
                           </p>
                           <p className="text-xs text-gray-500">
-                            {shipment.date}
+                            {formatDate(shipment.createdAt)}
                           </p>
                         </div>
                       </div>
-                      <div className="text-right flex-shrink-0 ml-2">
+                      <div className="flex flex-col items-center justify-center text-center flex-shrink-0 min-w-[110px]">
                         <span
-                          className={`inline-flex px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(
+                          className={`inline-flex items-center justify-center min-w-[92px] px-3 py-1 rounded-full text-xs font-medium ${getStatusColor(
                             shipment.status,
                           )}`}
                         >
                           {t(`status.${shipment.status}`)}
                         </span>
-                        <p className="text-sm font-medium text-gray-900 mt-1">
-                          {formatAmountSYP(shipment.cost)}
+                        <p className="text-sm font-medium text-gray-900 mt-1 text-center">
+                          {shipment.cost.currency === "USD"
+                            ? formatAmountUSD(shipment.cost.amount)
+                            : formatAmountSYP(shipment.cost.amount)}
                         </p>
                       </div>
                     </div>

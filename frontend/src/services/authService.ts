@@ -42,7 +42,15 @@ export interface AuthResponse {
 class AuthService {
   async register(data: RegisterData): Promise<AuthResponse> {
     try {
-      const response = await api.post("/auth/register", data);
+      const payload = {
+        ...data,
+        email: String(data.email || "")
+          .trim()
+          .toLowerCase(),
+        phone: String(data.phone || "").trim(),
+      };
+
+      const response = await api.post("/auth/register", payload);
 
       // Store tokens and user data
       if (response.data.success) {
@@ -65,7 +73,14 @@ class AuthService {
 
   async login(credentials: LoginCredentials): Promise<AuthResponse> {
     try {
-      const response = await api.post("/auth/login", credentials);
+      const payload = {
+        ...credentials,
+        email: String(credentials.email || "")
+          .trim()
+          .toLowerCase(),
+      };
+
+      const response = await api.post("/auth/login", payload);
 
       // Store tokens and user data
       if (response.data.success) {
@@ -130,7 +145,12 @@ class AuthService {
 
   async forgotPassword(data: ForgotPasswordData): Promise<any> {
     try {
-      const response = await api.post("/auth/forgot-password", data);
+      const response = await api.post("/auth/forgot-password", {
+        ...data,
+        email: String(data.email || "")
+          .trim()
+          .toLowerCase(),
+      });
       return response.data;
     } catch (error) {
       throw new Error(handleApiError(error));

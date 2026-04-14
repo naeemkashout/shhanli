@@ -53,29 +53,63 @@ export default function ResetPassword() {
     e.preventDefault();
 
     if (!formData.password || !formData.confirmPassword) {
-      toast.error("يرجى إدخال كلمة المرور وتأكيدها");
+      toast.error(
+        language === "ar"
+          ? "يرجى إدخال كلمة المرور وتأكيدها"
+          : "Please enter and confirm your password",
+      );
       return;
     }
 
     if (formData.password !== formData.confirmPassword) {
-      toast.error("كلمات المرور غير متطابقة");
+      toast.error(
+        language === "ar"
+          ? "كلمات المرور غير متطابقة"
+          : "Passwords do not match",
+      );
       return;
     }
 
     if (formData.password.length < 6) {
-      toast.error("كلمة المرور يجب أن تكون على الأقل 6 أحرف");
+      toast.error(
+        language === "ar"
+          ? "كلمة المرور يجب أن تكون على الأقل 6 أحرف"
+          : "Password must be at least 6 characters",
+      );
       return;
     }
 
-    await operationStatus.executeOperation(async () => {
-      await resetPassword({ token, newPassword: formData.password });
-    });
+    operationStatus.setLoading();
+
+    try {
+      const isPasswordReset = await resetPassword({
+        token,
+        newPassword: formData.password,
+      });
+
+      if (!isPasswordReset) {
+        throw new Error("فشل في إعادة تعيين كلمة المرور");
+      }
+
+      operationStatus.setSuccess();
+    } catch (error: any) {
+      operationStatus.setError(
+        error?.message ||
+          (language === "ar"
+            ? "فشل في إعادة تعيين كلمة المرور"
+            : "Failed to reset password"),
+      );
+    }
   };
 
   const handleOperationSuccess = () => {
     operationStatus.reset();
     setIsPasswordReset(true);
-    toast.success("تم إعادة تعيين كلمة المرور بنجاح");
+    toast.success(
+      language === "ar"
+        ? "تم إعادة تعيين كلمة المرور بنجاح"
+        : "Password has been reset successfully",
+    );
 
     // Redirect to login after 3 seconds
     setTimeout(() => {
@@ -83,8 +117,58 @@ export default function ResetPassword() {
     }, 3000);
   };
 
-  const handleOperationRetry = () => {
-    handleSubmit({ preventDefault: () => {} } as React.FormEvent);
+  const handleOperationRetry = async () => {
+    if (!formData.password || !formData.confirmPassword) {
+      const message =
+        language === "ar"
+          ? "يرجى إدخال كلمة المرور وتأكيدها"
+          : "Please enter and confirm your password";
+      toast.error(message);
+      operationStatus.setError(message);
+      return;
+    }
+
+    if (formData.password !== formData.confirmPassword) {
+      const message =
+        language === "ar"
+          ? "كلمات المرور غير متطابقة"
+          : "Passwords do not match";
+      toast.error(message);
+      operationStatus.setError(message);
+      return;
+    }
+
+    if (formData.password.length < 6) {
+      const message =
+        language === "ar"
+          ? "كلمة المرور يجب أن تكون على الأقل 6 أحرف"
+          : "Password must be at least 6 characters";
+      toast.error(message);
+      operationStatus.setError(message);
+      return;
+    }
+
+    operationStatus.setLoading();
+
+    try {
+      const isPasswordReset = await resetPassword({
+        token,
+        newPassword: formData.password,
+      });
+
+      if (!isPasswordReset) {
+        throw new Error("فشل في إعادة تعيين كلمة المرور");
+      }
+
+      operationStatus.setSuccess();
+    } catch (error: any) {
+      operationStatus.setError(
+        error?.message ||
+          (language === "ar"
+            ? "فشل في إعادة تعيين كلمة المرور"
+            : "Failed to reset password"),
+      );
+    }
   };
 
   const handleInputChange = (field: string, value: string) => {
@@ -292,10 +376,20 @@ export default function ResetPassword() {
       {/* Operation Status Overlay */}
       <OperationStatus
         state={operationStatus.state}
-        title="إعادة تعيين كلمة المرور"
-        loadingMessage="جاري إعادة تعيين كلمة المرور..."
-        successMessage="تم إعادة تعيين كلمة المرور بنجاح"
-        errorMessage="فشل في إعادة تعيين كلمة المرور"
+        title={t("auth.resetPassword")}
+        loadingMessage={
+          language === "ar"
+            ? "جاري إعادة تعيين كلمة المرور..."
+            : "Resetting your password..."
+        }
+        successMessage={
+          language === "ar"
+            ? "تم إعادة تعيين كلمة المرور بنجاح"
+            : "Password has been reset successfully"
+        }
+        errorMessage={
+          operationStatus.errorMessage || t("auth.resetPasswordError")
+        }
         onRetry={handleOperationRetry}
         onContinue={handleOperationSuccess}
         onClose={() => operationStatus.reset()}

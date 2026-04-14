@@ -23,8 +23,15 @@ import { Textarea } from "@/components/ui/textarea";
 import { Search, Edit, Download, Package } from "lucide-react";
 import adminService from "@/services/adminService";
 import { toast } from "sonner";
+import { io, Socket } from "socket.io-client";
+import { useAuth } from "@/contexts/AuthContext";
+import { useLanguage } from "@/contexts/LanguageContext";
 
 export default function ShipmentsManagement() {
+  const { language } = useLanguage();
+  const tr = (ar: string, en: string) => (language === "ar" ? ar : en);
+  const { user } = useAuth();
+  const isCompanyAdmin = user?.role === "company-admin";
   const [shipments, setShipments] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -35,13 +42,60 @@ export default function ShipmentsManagement() {
   const [isUpdateDialogOpen, setIsUpdateDialogOpen] = useState(false);
   const [updateFormData, setUpdateFormData] = useState({
     status: "",
-    note: "",
-    location: "",
+    correctedWeight: "",
+    weightAdjustmentNote: "",
   });
 
   useEffect(() => {
     fetchShipments();
   }, [page, search, statusFilter]);
+
+  useEffect(() => {
+    if (!isCompanyAdmin) return;
+
+    const rawCompanyId =
+      typeof user?.shippingCompanyId === "string"
+        ? user.shippingCompanyId
+        : user?.shippingCompanyId?._id;
+
+    const companyId = String(rawCompanyId || "").trim();
+    if (!companyId) return;
+
+    const apiBaseUrl =
+      import.meta.env.VITE_API_URL || "http://localhost:5001/api";
+    const socketUrl = apiBaseUrl.replace(/\/api\/?$/, "");
+
+    const socket: Socket = io(socketUrl, {
+      transports: ["websocket", "polling"],
+      withCredentials: true,
+    });
+
+    socket.on("connect", () => {
+      socket.emit("join-company-room", companyId);
+    });
+
+    socket.on("cancellation-request-created", (payload: any) => {
+      toast.info(
+        language === "ar"
+          ? `طلب إلغاء جديد للشحنة ${payload?.trackingNumber || ""}`
+          : `New cancellation request for shipment ${payload?.trackingNumber || ""}`,
+      );
+      fetchShipments();
+    });
+
+    socket.on("shipment-weight-adjusted", (payload: any) => {
+      toast.info(
+        language === "ar"
+          ? `تم تعديل وزن الشحنة ${payload?.trackingNumber || ""}`
+          : `Shipment ${payload?.trackingNumber || ""} weight was adjusted`,
+      );
+      fetchShipments();
+    });
+
+    return () => {
+      socket.disconnect();
+    };
+  }, [isCompanyAdmin, user?.shippingCompanyId, language]);
 
   const fetchShipments = async () => {
     try {
@@ -55,7 +109,9 @@ export default function ShipmentsManagement() {
       setShipments(response.data);
       setTotalPages(response.pagination.pages);
     } catch (error: any) {
-      toast.error(error.message || "فشل تحميل الشحنات");
+      toast.error(
+        error.message || tr("فشل تحميل الشحنات", "Failed to load shipments"),
+      );
     } finally {
       setIsLoading(false);
     }
@@ -65,37 +121,93 @@ export default function ShipmentsManagement() {
     setSelectedShipment(shipment);
     setUpdateFormData({
       status: shipment.status,
-      note: "",
-      location: "",
+      correctedWeight: shipment.package?.weight
+        ? String(shipment.package.weight)
+        : "",
+      weightAdjustmentNote: shipment.weightAdjustment?.note || "",
     });
     setIsUpdateDialogOpen(true);
   };
 
   const handleSubmitUpdate = async () => {
     try {
-      await adminService.updateShipmentStatus(
-        selectedShipment._id,
-        updateFormData
+      await adminService.updateShipmentStatus(selectedShipment._id, {
+        status: updateFormData.status,
+        correctedWeight: updateFormData.correctedWeight
+          ? Number(updateFormData.correctedWeight)
+          : undefined,
+        weightAdjustmentNote: updateFormData.weightAdjustmentNote,
+      });
+      toast.success(
+        tr(
+          "تم تحديث حالة الشحنة بنجاح",
+          "Shipment status updated successfully",
+        ),
       );
-      toast.success("تم تحديث حالة الشحنة بنجاح");
       setIsUpdateDialogOpen(false);
       fetchShipments();
     } catch (error: any) {
-      toast.error(error.message || "فشل تحديث حالة الشحنة");
+      toast.error(
+        error.message ||
+          tr("فشل تحديث حالة الشحنة", "Failed to update shipment status"),
+      );
     }
   };
 
   const handleExportShipments = async () => {
     try {
-      const blob = await adminService.exportToExcel("shipments");
+      const blob = await adminService.exportToExcel("shipments", {
+        language: language === "ar" ? "ar" : "en",
+      });
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
       a.download = `shipments-${Date.now()}.xlsx`;
       a.click();
-      toast.success("تم تصدير البيانات بنجاح");
+      toast.success(
+        tr("تم تصدير البيانات بنجاح", "Data exported successfully"),
+      );
     } catch (error: any) {
-      toast.error(error.message || "فشل تصدير البيانات");
+      toast.error(
+        error.message || tr("فشل تصدير البيانات", "Failed to export data"),
+      );
+    }
+  };
+
+  const handleReviewCancellationRequest = async (
+    shipmentId: string,
+    action: "approve" | "reject",
+  ) => {
+    const confirmed = confirm(
+      action === "approve"
+        ? tr(
+            "هل أنت متأكد من الموافقة على طلب الإلغاء؟",
+            "Are you sure you want to approve the cancellation request?",
+          )
+        : tr(
+            "هل أنت متأكد من رفض طلب الإلغاء؟",
+            "Are you sure you want to reject the cancellation request?",
+          ),
+    );
+
+    if (!confirmed) return;
+
+    try {
+      await adminService.reviewCancellationRequest(shipmentId, { action });
+      toast.success(
+        action === "approve"
+          ? tr("تمت الموافقة على طلب الإلغاء", "Cancellation request approved")
+          : tr("تم رفض طلب الإلغاء", "Cancellation request rejected"),
+      );
+      fetchShipments();
+    } catch (error: any) {
+      toast.error(
+        error.message ||
+          tr(
+            "فشل معالجة طلب الإلغاء",
+            "Failed to process cancellation request",
+          ),
+      );
     }
   };
 
@@ -134,6 +246,18 @@ export default function ShipmentsManagement() {
         </Button>
       </div>
 
+      {shipments.some((shipment) => shipment.weightAdjustment?.isAdjusted) && (
+        <Card className="border-amber-300 bg-amber-50">
+          <CardContent className="py-4">
+            <p className="text-sm text-amber-800">
+              {language === "ar"
+                ? "الشحنات ذات الوزن المعدل مميزة باللون الأصفر."
+                : "Shipments with adjusted weight are highlighted in yellow."}
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
       <Card>
         <CardHeader>
           <div className="flex flex-col sm:flex-row items-center gap-4">
@@ -167,15 +291,18 @@ export default function ShipmentsManagement() {
             </div>
           ) : (
             <>
-              <div className="overflow-x-auto">
-                <Table>
+              <div className="overflow-hidden rounded-lg border border-slate-200">
+                <Table className="w-full table-fixed">
                   <TableHeader>
                     <TableRow>
                       <TableHead>رقم التتبع</TableHead>
                       <TableHead>المستخدم</TableHead>
                       <TableHead>من</TableHead>
                       <TableHead>إلى</TableHead>
+                      <TableHead>شركة الشحن</TableHead>
+                      <TableHead>الوزن</TableHead>
                       <TableHead>الحالة</TableHead>
+                      {!isCompanyAdmin && <TableHead>طلب الإلغاء</TableHead>}
                       <TableHead>التكلفة</TableHead>
                       <TableHead>التاريخ</TableHead>
                       <TableHead>الإجراءات</TableHead>
@@ -183,12 +310,15 @@ export default function ShipmentsManagement() {
                   </TableHeader>
                   <TableBody>
                     {shipments.map((shipment) => (
-                      <TableRow key={shipment._id}>
-                        <TableCell className="font-medium">
+                      <TableRow
+                        key={shipment._id}
+                        className={`${shipment.weightAdjustment?.isAdjusted ? "bg-amber-50" : ""} align-top`}
+                      >
+                        <TableCell className="font-medium break-words">
                           {shipment.trackingNumber}
                         </TableCell>
-                        <TableCell>
-                          <div>
+                        <TableCell className="break-words">
+                          <div className="space-y-1">
                             <p className="font-medium">
                               {shipment.userId?.name}
                             </p>
@@ -197,35 +327,116 @@ export default function ShipmentsManagement() {
                             </p>
                           </div>
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="text-sm break-words">
                           {shipment.sender.city}, {shipment.sender.country}
                         </TableCell>
+                        <TableCell className="text-sm break-words">
+                          {shipment.receivers?.[0]?.city || "-"},{" "}
+                          {shipment.receivers?.[0]?.country || "-"}
+                        </TableCell>
+                        <TableCell className="break-words">
+                          {shipment.shippingCompany?.name || "-"}
+                        </TableCell>
                         <TableCell>
-                          {shipment.receiver.city}, {shipment.receiver.country}
+                          <div className="space-y-1">
+                            <p className="text-sm">
+                              {shipment.package?.weight || "-"} kg
+                            </p>
+                            {shipment.weightAdjustment?.isAdjusted && (
+                              <Badge className="bg-amber-100 text-amber-800">
+                                {shipment.weightAdjustment?.originalWeight} →{" "}
+                                {shipment.weightAdjustment?.correctedWeight} kg
+                              </Badge>
+                            )}
+                            {shipment.weightAdjustment?.balanceDeduction
+                              ?.status === "insufficient-cancelled" && (
+                              <Badge className="bg-red-100 text-red-800">
+                                {language === "ar"
+                                  ? "ملغاة بسبب عدم كفاية رصيد العميل"
+                                  : "Cancelled: customer insufficient balance"}
+                              </Badge>
+                            )}
+                          </div>
                         </TableCell>
                         <TableCell>
                           <Badge className={getStatusColor(shipment.status)}>
                             {statusOptions.find(
-                              (s) => s.value === shipment.status
+                              (s) => s.value === shipment.status,
                             )?.label || shipment.status}
                           </Badge>
                         </TableCell>
+                        {!isCompanyAdmin && (
+                          <TableCell>
+                            {shipment.cancellationRequest?.status ===
+                            "pending" ? (
+                              <Badge className="bg-orange-100 text-orange-800">
+                                قيد المراجعة
+                              </Badge>
+                            ) : shipment.cancellationRequest?.status ===
+                              "approved" ? (
+                              <Badge className="bg-green-100 text-green-800">
+                                مقبول
+                              </Badge>
+                            ) : shipment.cancellationRequest?.status ===
+                              "rejected" ? (
+                              <Badge className="bg-red-100 text-red-800">
+                                مرفوض
+                              </Badge>
+                            ) : (
+                              <span className="text-gray-500">-</span>
+                            )}
+                          </TableCell>
+                        )}
                         <TableCell>
                           {shipment.cost.amount} {shipment.cost.currency}
                         </TableCell>
                         <TableCell>
                           {new Date(shipment.createdAt).toLocaleDateString(
-                            "ar-SY"
+                            "ar-SY",
                           )}
                         </TableCell>
                         <TableCell>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => handleUpdateStatus(shipment)}
-                          >
-                            <Edit className="w-4 h-4" />
-                          </Button>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleUpdateStatus(shipment)}
+                            >
+                              <Edit className="w-4 h-4" />
+                            </Button>
+                            {!isCompanyAdmin &&
+                              shipment.cancellationRequest?.status ===
+                                "pending" && (
+                                <>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="text-green-700 border-green-300"
+                                    onClick={() =>
+                                      handleReviewCancellationRequest(
+                                        shipment._id,
+                                        "approve",
+                                      )
+                                    }
+                                  >
+                                    قبول
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="text-red-700 border-red-300"
+                                    onClick={() =>
+                                      handleReviewCancellationRequest(
+                                        shipment._id,
+                                        "reject",
+                                      )
+                                    }
+                                  >
+                                    رفض
+                                  </Button>
+                                </>
+                              )}
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))}
@@ -293,37 +504,37 @@ export default function ShipmentsManagement() {
               </select>
             </div>
             <div>
-              <Label>الموقع</Label>
+              <Label>الوزن المصحح (كغ)</Label>
               <Input
-                value={updateFormData.location}
+                type="number"
+                min="0.1"
+                step="0.1"
+                value={updateFormData.correctedWeight}
                 onChange={(e) =>
                   setUpdateFormData({
                     ...updateFormData,
-                    location: e.target.value,
+                    correctedWeight: e.target.value,
                   })
                 }
-                placeholder="الموقع الحالي للشحنة"
+                placeholder="مثال: 2.5"
               />
             </div>
             <div>
-              <Label>ملاحظة</Label>
+              <Label>ملاحظة تصحيح الوزن</Label>
               <Textarea
-                value={updateFormData.note}
+                value={updateFormData.weightAdjustmentNote}
                 onChange={(e) =>
-                  setUpdateFormData({ ...updateFormData, note: e.target.value })
+                  setUpdateFormData({
+                    ...updateFormData,
+                    weightAdjustmentNote: e.target.value,
+                  })
                 }
-                placeholder="أضف ملاحظة (اختياري)"
-                rows={3}
+                placeholder="سبب/تفاصيل تصحيح الوزن (اختياري)"
+                rows={2}
               />
             </div>
           </div>
           <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setIsUpdateDialogOpen(false)}
-            >
-              إلغاء
-            </Button>
             <Button onClick={handleSubmitUpdate}>تحديث الحالة</Button>
           </DialogFooter>
         </DialogContent>

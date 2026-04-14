@@ -16,6 +16,15 @@ interface User {
     SYP: number;
   };
   role?: string;
+  shippingCompanyId?:
+    | string
+    | {
+        _id: string;
+        name: string;
+        code: string;
+        isActive: boolean;
+      }
+    | null;
 }
 
 interface AuthContextType {
@@ -28,7 +37,9 @@ interface AuthContextType {
     currentPassword: string,
     newPassword: string,
   ) => Promise<boolean>;
-  forgotPassword: (data: { email: string }) => Promise<boolean>;
+  forgotPassword: (data: {
+    email: string;
+  }) => Promise<{ success: boolean; previewUrl?: string }>;
   resetPassword: (data: {
     token: string;
     newPassword: string;
@@ -92,11 +103,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (response.success) {
         setUser(response.data.user);
-        toast.success("تم تسجيل الدخول بنجاح");
         return true;
       }
 
-      return false;
+      throw new Error("فشل تسجيل الدخول");
     } catch (error: any) {
       // Handle specific error types with detailed messages
       let errorMessage = "فشل تسجيل الدخول";
@@ -127,8 +137,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           error.response?.data?.message || error.message || "فشل تسجيل الدخول";
       }
 
-      toast.error(errorMessage);
-      return false;
+      throw new Error(errorMessage);
     } finally {
       setIsLoading(false);
     }
@@ -158,11 +167,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (response.success) {
         setUser(response.data.user);
-        toast.success("تم التسجيل بنجاح");
         return true;
       }
 
-      return false;
+      throw new Error("فشل التسجيل");
     } catch (error: any) {
       // Handle specific registration errors
       let errorMessage = "فشل التسجيل";
@@ -184,8 +192,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         errorMessage = error.message || "فشل التسجيل";
       }
 
-      toast.error(errorMessage);
-      return false;
+      throw new Error(errorMessage);
     } finally {
       setIsLoading(false);
     }
@@ -203,32 +210,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
 
       if (response.success) {
-        toast.success("تم تغيير كلمة المرور بنجاح");
         return true;
       }
 
-      return false;
+      throw new Error("فشل تغيير كلمة المرور");
     } catch (error: any) {
-      toast.error(error.message || "فشل تغيير كلمة المرور");
-      return false;
+      throw new Error(error.message || "فشل تغيير كلمة المرور");
     } finally {
       setIsLoading(false);
     }
   };
 
-  const forgotPassword = async (data: { email: string }): Promise<boolean> => {
+  const forgotPassword = async (data: {
+    email: string;
+  }): Promise<{ success: boolean; previewUrl?: string }> => {
     setIsLoading(true);
     try {
       const response = await authService.forgotPassword(data);
 
       if (response.success) {
-        toast.success(
-          "تم إرسال رابط إعادة تعيين كلمة المرور إلى بريدك الإلكتروني",
-        );
-        return true;
+        return {
+          success: true,
+          previewUrl: response?.data?.previewUrl || undefined,
+        };
       }
 
-      return false;
+      throw new Error("فشل في إرسال رابط إعادة التعيين");
     } catch (error: any) {
       // Handle specific forgot password errors
       let errorMessage = "فشل في إرسال رابط إعادة التعيين";
@@ -265,8 +272,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           "فشل في إرسال رابط إعادة التعيين";
       }
 
-      toast.error(errorMessage);
-      return false;
+      throw new Error(errorMessage);
     } finally {
       setIsLoading(false);
     }
@@ -281,11 +287,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const response = await authService.resetPassword(data);
 
       if (response.success) {
-        toast.success("تم إعادة تعيين كلمة المرور بنجاح");
         return true;
       }
 
-      return false;
+      throw new Error("فشل في إعادة تعيين كلمة المرور");
     } catch (error: any) {
       // Handle specific reset password errors
       let errorMessage = "فشل في إعادة تعيين كلمة المرور";
@@ -315,8 +320,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           "فشل في إعادة تعيين كلمة المرور";
       }
 
-      toast.error(errorMessage);
-      return false;
+      throw new Error(errorMessage);
     } finally {
       setIsLoading(false);
     }

@@ -132,6 +132,16 @@ const mockContacts: Contact[] = [
   },
 ];
 
+const PHONE_REGEX = /^\+?\d{7,15}$/;
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+const normalizePhoneInput = (value: string) => {
+  // Keep digits and a single optional leading plus.
+  const cleaned = value.replace(/[^\d+]/g, "");
+  const withoutExtraPlus = cleaned.replace(/(?!^)\+/g, "");
+  return withoutExtraPlus;
+};
+
 export default function Contacts() {
   const { t, isRTL } = useLanguage();
   const [contacts, setContacts] = useState<Contact[]>([]);
@@ -171,9 +181,14 @@ export default function Contacts() {
       setLoading(true);
       const response = await contactService.getUserContacts();
       setContacts(response.data || []);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error loading contacts:", error);
-      toast.error("فشل في تحميل جهات الاتصال");
+      toast.error(
+        error?.message ||
+          (language === "ar"
+            ? "فشل في تحميل جهات الاتصال"
+            : "Failed to load contacts"),
+      );
     } finally {
       setLoading(false);
     }
@@ -195,15 +210,28 @@ export default function Contacts() {
 
   const validateForm = () => {
     const newErrors: { [key: string]: string } = {};
+    const phone = normalizePhoneInput(formData.phone || "").trim();
+    const email = String(formData.email || "").trim();
 
     if (!formData.name?.trim()) {
       newErrors.name = t("validation.firstNameRequired");
     }
-    if (!formData.phone?.trim()) {
+    if (!phone) {
       newErrors.phone = t("validation.phoneRequired");
+    } else if (!PHONE_REGEX.test(phone)) {
+      newErrors.phone =
+        language === "ar"
+          ? "رقم الهاتف يجب أن يحتوي أرقاما فقط (مع + اختياري في البداية)"
+          : "Phone number must contain digits only (optional leading +)";
     }
-    if (!formData.street?.trim()) {
-      newErrors.street = t("validation.streetRequired");
+    if (email && !EMAIL_REGEX.test(email)) {
+      newErrors.email =
+        language === "ar"
+          ? "صيغة البريد الإلكتروني غير صحيحة"
+          : "Invalid email format";
+    }
+    if (!formData.address?.trim()) {
+      newErrors.address = t("validation.streetRequired");
     }
     if (!formData.country) {
       newErrors.country = t("validation.countryRequired");
@@ -287,9 +315,14 @@ export default function Contacts() {
       toast.success(t("contacts.deleteSuccess"));
       setIsDeleteDialogOpen(false);
       setContactToDelete(null);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error deleting contact:", error);
-      toast.error("فشل في حذف جهة الاتصال");
+      toast.error(
+        error?.message ||
+          (language === "ar"
+            ? "فشل في حذف جهة الاتصال"
+            : "Failed to delete contact"),
+      );
     } finally {
       setIsSubmitting(false);
     }
@@ -303,17 +336,25 @@ export default function Contacts() {
     try {
       setIsSubmitting(true);
 
+      const payload: CreateContactData = {
+        ...formData,
+        phone: normalizePhoneInput(formData.phone || "").trim(),
+        email: (formData.email || "").trim(),
+        address: (formData.address || formData.street || "").trim(),
+        street: (formData.street || formData.address || "").trim(),
+      };
+
       if (selectedContact) {
         // Edit existing contact
         await contactService.updateContact(
           selectedContact.id || selectedContact._id,
-          formData,
+          payload,
         );
         toast.success(t("contacts.updateSuccess"));
         setIsEditDialogOpen(false);
       } else {
         // Add new contact
-        await contactService.createContact(formData);
+        await contactService.createContact(payload);
         toast.success(t("contacts.addSuccess"));
         setIsAddDialogOpen(false);
       }
@@ -324,9 +365,18 @@ export default function Contacts() {
     } catch (error: any) {
       console.error("Error saving contact:", error);
       if (error.message?.includes("Phone number already exists")) {
-        toast.error("رقم الهاتف موجود بالفعل");
+        toast.error(
+          language === "ar"
+            ? "رقم الهاتف موجود بالفعل"
+            : "Phone number already exists",
+        );
       } else {
-        toast.error("فشل في حفظ جهة الاتصال");
+        toast.error(
+          error?.message ||
+            (language === "ar"
+              ? "فشل في حفظ جهة الاتصال"
+              : "Failed to save contact"),
+        );
       }
     } finally {
       setIsSubmitting(false);
@@ -334,10 +384,24 @@ export default function Contacts() {
   };
   const { language } = useLanguage();
   const handleInputChange = (field: keyof Contact, value: string) => {
-    setFormData((prev) => ({ ...prev, [field]: value }));
+    const nextValue =
+      field === "phone"
+        ? normalizePhoneInput(value)
+        : field === "email"
+          ? value.trimStart()
+          : value;
+
+    setFormData((prev) => ({ ...prev, [field]: nextValue }));
+
     // Clear error when user starts typing
     if (errors[field]) {
       setErrors((prev) => ({ ...prev, [field]: "" }));
+    }
+    if (field === "phone" && errors.phone) {
+      setErrors((prev) => ({ ...prev, phone: "" }));
+    }
+    if (field === "email" && errors.email) {
+      setErrors((prev) => ({ ...prev, email: "" }));
     }
   };
 
@@ -396,11 +460,11 @@ export default function Contacts() {
   return (
     <div className="space-y-6" dir={isRTL ? "rtl" : "ltr"}>
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <h1 className="text-3xl font-bold text-gray-900">
           {t("contacts.title")}
         </h1>
-        <Button onClick={handleAddContact}>
+        <Button onClick={handleAddContact} className="w-full sm:w-auto">
           <Plus className="w-4 h-4 mr-2" />
           {t("contacts.addContact")}
         </Button>
@@ -457,20 +521,20 @@ export default function Contacts() {
           const ClientIcon = getClientTypeIcon(contact.clientType);
           return (
             <Card
-              key={contact.id}
+              key={contact._id || contact.id}
               className="hover:shadow-lg transition-shadow"
             >
               <CardContent className="p-6">
-                <div className="flex items-start justify-between mb-4">
-                  <div className="flex items-center gap-3">
+                <div className="flex items-start justify-between gap-2 mb-4">
+                  <div className="flex items-start gap-3 min-w-0">
                     <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
                       <ClientIcon className="w-6 h-6 text-blue-600" />
                     </div>
-                    <div>
-                      <h3 className="font-semibold text-lg text-gray-900">
+                    <div className="min-w-0">
+                      <h3 className="font-semibold text-lg text-gray-900 break-words">
                         {contact.name}
                       </h3>
-                      <div className="flex gap-2 mt-1">
+                      <div className="flex flex-wrap gap-2 mt-1">
                         <Badge className={getTypeColor(contact.type)}>
                           {getTypeLabel(contact.type)}
                         </Badge>
@@ -482,11 +546,12 @@ export default function Contacts() {
                       </div>
                     </div>
                   </div>
-                  <div className="flex gap-2">
+                  <div className="flex gap-1 shrink-0">
                     <Button
                       variant="ghost"
                       size="sm"
                       onClick={() => handleEditContact(contact)}
+                      className="min-h-[40px] min-w-[40px]"
                     >
                       <Edit className="w-4 h-4" />
                     </Button>
@@ -494,7 +559,7 @@ export default function Contacts() {
                       variant="ghost"
                       size="sm"
                       onClick={() => handleDeleteClick(contact)}
-                      className="text-red-600 hover:text-red-700"
+                      className="text-red-600 hover:text-red-700 min-h-[40px] min-w-[40px]"
                     >
                       <Trash2 className="w-4 h-4" />
                     </Button>
@@ -554,7 +619,7 @@ export default function Contacts() {
 
       {/* Delete Confirmation Dialog */}
       <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
-        <DialogContent>
+        <DialogContent className="max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{t("common.confirm")}</DialogTitle>
             <DialogDescription>
@@ -562,14 +627,19 @@ export default function Contacts() {
               {t("common.cannotReverseAction")}
             </DialogDescription>
           </DialogHeader>
-          <DialogFooter>
+          <DialogFooter className="flex-col-reverse sm:flex-row gap-2">
             <Button
               variant="outline"
               onClick={() => setIsDeleteDialogOpen(false)}
+              className="w-full sm:w-auto"
             >
               {t("common.cancel")}
             </Button>
-            <Button variant="destructive" onClick={handleConfirmDelete}>
+            <Button
+              variant="destructive"
+              onClick={handleConfirmDelete}
+              className="w-full sm:w-auto"
+            >
               {t("common.delete")}
             </Button>
           </DialogFooter>
@@ -578,7 +648,7 @@ export default function Contacts() {
 
       {/* Add Contact Dialog */}
       <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
-        <DialogContent className="sm:max-w-2xl">
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle
               className={`${language === "ar" ? "text-right" : "text-left"}`}
@@ -617,6 +687,8 @@ export default function Contacts() {
                   value={formData.phone || ""}
                   onChange={(e) => handleInputChange("phone", e.target.value)}
                   placeholder="+963991234567"
+                  inputMode="tel"
+                  dir="ltr"
                   className={`mt-2 ${errors.phone ? "border-red-500" : ""}`}
                 />
                 {errors.phone && (
@@ -631,8 +703,11 @@ export default function Contacts() {
                   value={formData.email || ""}
                   onChange={(e) => handleInputChange("email", e.target.value)}
                   placeholder="example@email.com"
-                  className="mt-2"
+                  className={`mt-2 ${errors.email ? "border-red-500" : ""}`}
                 />
+                {errors.email && (
+                  <p className="mt-1 text-sm text-red-600">{errors.email}</p>
+                )}
               </div>
               <div>
                 <Label htmlFor="type">
@@ -816,18 +891,24 @@ export default function Contacts() {
               )}
             </div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsAddDialogOpen(false)}>
+          <DialogFooter className="flex-col-reverse sm:flex-row gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setIsAddDialogOpen(false)}
+              className="w-full sm:w-auto"
+            >
               {t("common.cancel")}
             </Button>
-            <Button onClick={handleSaveContact}>{t("common.save")}</Button>
+            <Button onClick={handleSaveContact} className="w-full sm:w-auto">
+              {t("common.save")}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
       {/* Edit Contact Dialog */}
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-        <DialogContent className="sm:max-w-2xl">
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle
               className={`${language === "ar" ? "text-right" : "text-left"}`}
@@ -861,6 +942,8 @@ export default function Contacts() {
                   value={formData.phone || ""}
                   onChange={(e) => handleInputChange("phone", e.target.value)}
                   placeholder="+963991234567"
+                  inputMode="tel"
+                  dir="ltr"
                   className={`mt-2 ${errors.phone ? "border-red-500" : ""}`}
                 />
                 {errors.phone && (
@@ -875,8 +958,11 @@ export default function Contacts() {
                   value={formData.email || ""}
                   onChange={(e) => handleInputChange("email", e.target.value)}
                   placeholder="example@email.com"
-                  className="mt-2"
+                  className={`mt-2 ${errors.email ? "border-red-500" : ""}`}
                 />
+                {errors.email && (
+                  <p className="mt-1 text-sm text-red-600">{errors.email}</p>
+                )}
               </div>
               <div>
                 <Label htmlFor="edit-type">
@@ -1060,14 +1146,17 @@ export default function Contacts() {
               )}
             </div>
           </div>
-          <DialogFooter>
+          <DialogFooter className="flex-col-reverse sm:flex-row gap-2">
             <Button
               variant="outline"
               onClick={() => setIsEditDialogOpen(false)}
+              className="w-full sm:w-auto"
             >
               {t("common.cancel")}
             </Button>
-            <Button onClick={handleSaveContact}>{t("common.save")}</Button>
+            <Button onClick={handleSaveContact} className="w-full sm:w-auto">
+              {t("common.save")}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

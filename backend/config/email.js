@@ -2,6 +2,7 @@
 const nodemailer = require("nodemailer");
 
 let transporter;
+let etherealUser = "";
 
 const createTransporter = async () => {
   try {
@@ -28,6 +29,7 @@ const createTransporter = async () => {
       console.log("📧 Using Ethereal Email for development/testing");
 
       const testAccount = await nodemailer.createTestAccount();
+      etherealUser = testAccount.user;
 
       transporter = nodemailer.createTransport({
         host: "smtp.ethereal.email",
@@ -52,6 +54,16 @@ const createTransporter = async () => {
 // Initialize transporter
 createTransporter();
 
+const ensureTransporter = async () => {
+  if (!transporter) {
+    await createTransporter();
+  }
+
+  if (!transporter) {
+    throw new Error("Email transporter is not configured");
+  }
+};
+
 // Verify connection
 const verifyConnection = async () => {
   try {
@@ -64,10 +76,16 @@ const verifyConnection = async () => {
 
 // Send password reset email
 const sendPasswordResetEmail = async (to, resetToken) => {
-  const resetUrl = `${process.env.FRONTEND_URL || "http://localhost:5173"}/reset-password/${resetToken}`;
+  await ensureTransporter();
+
+  const resetUrl = `${process.env.FRONTEND_URL || "http://localhost:5173"}/reset-password?token=${encodeURIComponent(resetToken)}`;
+  const fromAddress =
+    process.env.EMAIL_USER && !process.env.EMAIL_USER.includes("your-")
+      ? process.env.EMAIL_USER
+      : etherealUser || "no-reply@shhanli.local";
 
   const mailOptions = {
-    from: `"شحنلي" <${process.env.EMAIL_USER}>`,
+    from: `"شحنلي" <${fromAddress}>`,
     to: to,
     subject: "إعادة تعيين كلمة المرور - شحنلي",
     html: `
@@ -204,16 +222,17 @@ const sendPasswordResetEmail = async (to, resetToken) => {
   try {
     const info = await transporter.sendMail(mailOptions);
     console.log("Password reset email sent:", info.messageId);
+    let previewUrl = null;
 
     // If using Ethereal Email, log the preview URL
     if (process.env.NODE_ENV === "development" && info.messageId) {
-      const previewUrl = nodemailer.getTestMessageUrl(info);
+      previewUrl = nodemailer.getTestMessageUrl(info);
       if (previewUrl) {
         console.log("📧 Preview email at:", previewUrl);
       }
     }
 
-    return { success: true, messageId: info.messageId };
+    return { success: true, messageId: info.messageId, previewUrl };
   } catch (error) {
     console.error("Error sending password reset email:", error);
     throw new Error("Failed to send password reset email");
@@ -222,8 +241,15 @@ const sendPasswordResetEmail = async (to, resetToken) => {
 
 // Send welcome email
 const sendWelcomeEmail = async (to, userName) => {
+  await ensureTransporter();
+
+  const fromAddress =
+    process.env.EMAIL_USER && !process.env.EMAIL_USER.includes("your-")
+      ? process.env.EMAIL_USER
+      : etherealUser || "no-reply@shhanli.local";
+
   const mailOptions = {
-    from: `"شحنلي" <${process.env.EMAIL_USER}>`,
+    from: `"شحنلي" <${fromAddress}>`,
     to: to,
     subject: "مرحباً بك في شحنلي",
     html: `

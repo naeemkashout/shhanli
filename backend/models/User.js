@@ -57,8 +57,13 @@ const userSchema = new mongoose.Schema(
     },
     role: {
       type: String,
-      enum: ["user", "admin", "super-admin"],
+      enum: ["user", "admin", "super-admin", "company-admin"],
       default: "user",
+    },
+    shippingCompanyId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "ShippingCompany",
+      default: null,
     },
     isActive: {
       type: Boolean,

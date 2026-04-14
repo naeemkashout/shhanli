@@ -13,7 +13,8 @@ const connectDB = async () => {
     await createIndexes();
   } catch (error) {
     console.error(`❌ MongoDB Connection Error: ${error.message}`);
-    process.exit(1);
+    console.log("⚠️  Server will continue without database connection");
+    // process.exit(1); // Commented out to allow server to run without DB
   }
 };
 

@@ -34,19 +34,48 @@ export default function SignIn() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    await operationStatus.executeOperation(async () => {
-      await login(formData.email, formData.password);
-    });
+    operationStatus.setLoading();
+
+    try {
+      const isLoggedIn = await login(formData.email, formData.password);
+
+      if (!isLoggedIn) {
+        throw new Error(t("auth.loginError"));
+      }
+
+      operationStatus.setSuccess();
+    } catch (error: any) {
+      operationStatus.setError(error?.message || t("auth.loginError"));
+    }
   };
 
   const handleOperationSuccess = () => {
     operationStatus.reset();
     toast.success(t("auth.loginSuccess"));
-    navigate("/dashboard");
+
+    const storedUser = localStorage.getItem("kashout_user");
+    const role = storedUser ? JSON.parse(storedUser)?.role : undefined;
+    const isAdminAccount = ["admin", "super-admin", "company-admin"].includes(
+      role,
+    );
+
+    navigate(isAdminAccount ? "/admin" : "/dashboard");
   };
 
-  const handleOperationRetry = () => {
-    handleSubmit({ preventDefault: () => {} } as React.FormEvent);
+  const handleOperationRetry = async () => {
+    operationStatus.setLoading();
+
+    try {
+      const isLoggedIn = await login(formData.email, formData.password);
+
+      if (!isLoggedIn) {
+        throw new Error(t("auth.loginError"));
+      }
+
+      operationStatus.setSuccess();
+    } catch (error: any) {
+      operationStatus.setError(error?.message || t("auth.loginError"));
+    }
   };
 
   const handleInputChange = (field: string, value: string | boolean) => {
@@ -184,7 +213,7 @@ export default function SignIn() {
         title={t("auth.signIn")}
         loadingMessage={t("auth.signingIn")}
         successMessage={t("auth.loginSuccess")}
-        errorMessage={t("auth.loginError")}
+        errorMessage={operationStatus.errorMessage || t("auth.loginError")}
         onRetry={handleOperationRetry}
         onContinue={handleOperationSuccess}
         onClose={() => operationStatus.reset()}

@@ -4,6 +4,28 @@ const ActivityLog = require("../models/ActivityLog");
 const jwt = require("jsonwebtoken");
 const { sendPasswordResetEmail, sendWelcomeEmail } = require("../config/email");
 
+const normalizeEmail = (value = "") =>
+  String(value || "")
+    .trim()
+    .toLowerCase();
+const normalizePhone = (value = "") => String(value || "").trim();
+
+const findUserByEmail = async (email) => {
+  const normalizedEmail = normalizeEmail(email);
+  if (!normalizedEmail) return null;
+
+  const exactUser = await User.findOne({ email: normalizedEmail });
+  if (exactUser) return exactUser;
+
+  // Fallback for any legacy records that might not be normalized.
+  return User.findOne({
+    email: {
+      $regex: `^${normalizedEmail.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`,
+      $options: "i",
+    },
+  });
+};
+
 // Generate JWT Token
 const generateToken = (id) => {
   return jwt.sign({ id }, process.env.JWT_SECRET, {
@@ -34,8 +56,20 @@ exports.register = async (req, res) => {
       address,
     } = req.body;
 
+    const normalizedEmail = normalizeEmail(email);
+    const normalizedPhone = normalizePhone(phone);
+
+    if (!normalizedEmail || !normalizedPhone) {
+      return res.status(400).json({
+        success: false,
+        message: "Email and phone are required",
+      });
+    }
+
     // Check if user exists
-    const userExists = await User.findOne({ $or: [{ email: email.toLowerCase() }, { phone }] });
+    const userExists = await User.findOne({
+      $or: [{ email: normalizedEmail }, { phone: normalizedPhone }],
+    });
     if (userExists) {
       return res.status(400).json({
         success: false,
@@ -46,8 +80,8 @@ exports.register = async (req, res) => {
     // Create user
     const user = await User.create({
       name,
-      email,
-      phone,
+      email: normalizedEmail,
+      phone: normalizedPhone,
       password,
       businessType: businessType || "individual",
       companyName,
@@ -60,7 +94,7 @@ exports.register = async (req, res) => {
       userId: user._id,
       action: "register",
       category: "auth",
-      description: `User registered: ${email}`,
+      description: `User registered: ${normalizedEmail}`,
       ipAddress: req.ip,
       userAgent: req.headers["user-agent"],
     });
@@ -98,9 +132,10 @@ exports.register = async (req, res) => {
 exports.login = async (req, res) => {
   try {
     const { email, password } = req.body;
+    const normalizedEmail = normalizeEmail(email);
 
     // Validate input
-    if (!email || !password) {
+    if (!normalizedEmail || !password) {
       return res.status(400).json({
         success: false,
         message: "Email and password are required",
@@ -109,7 +144,10 @@ exports.login = async (req, res) => {
     }
 
     // Check for user (include password field) - email is stored in lowercase
-    const user = await User.findOne({ email: email.toLowerCase() }).select("+password");
+    const baseUser = await findUserByEmail(normalizedEmail);
+    const user = baseUser
+      ? await User.findById(baseUser._id).select("+password")
+      : null;
     if (!user) {
       return res.status(401).json({
         success: false,
@@ -146,7 +184,7 @@ exports.login = async (req, res) => {
       userId: user._id,
       action: "login",
       category: "auth",
-      description: `User logged in: ${email}`,
+      description: `User logged in: ${normalizedEmail}`,
       ipAddress: req.ip,
       userAgent: req.headers["user-agent"],
     });
@@ -289,8 +327,9 @@ exports.refreshToken = async (req, res) => {
 exports.forgotPassword = async (req, res) => {
   try {
     const { email } = req.body;
+    const normalizedEmail = normalizeEmail(email);
 
-    if (!email) {
+    if (!normalizedEmail) {
       return res.status(400).json({
         success: false,
         message: "Email is required",
@@ -299,7 +338,7 @@ exports.forgotPassword = async (req, res) => {
     }
 
     // Check if user exists
-    const user = await User.findOne({ email: email.toLowerCase() });
+    const user = await findUserByEmail(normalizedEmail);
     if (!user) {
       return res.status(404).json({
         success: false,
@@ -344,14 +383,14 @@ exports.forgotPassword = async (req, res) => {
 
     // Send password reset email
     try {
-      await sendPasswordResetEmail(user.email, resetToken);
+      const emailResult = await sendPasswordResetEmail(user.email, resetToken);
 
       // Log activity
       await ActivityLog.create({
         userId: user._id,
         action: "password-reset-request",
         category: "auth",
-        description: `Password reset requested for: ${email}`,
+        description: `Password reset requested for: ${normalizedEmail}`,
         ipAddress: req.ip,
         userAgent: req.headers["user-agent"],
       });
@@ -360,6 +399,9 @@ exports.forgotPassword = async (req, res) => {
         success: true,
         message:
           "Password reset link has been sent to your email. Please check your inbox.",
+        data: {
+          previewUrl: emailResult?.previewUrl || null,
+        },
       });
     } catch (emailError) {
       console.error("Email sending error:", emailError);

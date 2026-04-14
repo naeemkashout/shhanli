@@ -13,8 +13,11 @@ import { Badge } from "@/components/ui/badge";
 import { Activity, RefreshCw, Filter } from "lucide-react";
 import adminService from "@/services/adminService";
 import { toast } from "sonner";
+import { useLanguage } from "@/contexts/LanguageContext";
 
 export default function ActivityLogs() {
+  const { language } = useLanguage();
+  const tr = (ar: string, en: string) => (language === "ar" ? ar : en);
   const [logs, setLogs] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [actionFilter, setActionFilter] = useState("");
@@ -38,7 +41,10 @@ export default function ActivityLogs() {
       setLogs(response.data);
       setTotalPages(response.pagination.pages);
     } catch (error: any) {
-      toast.error(error.message || "فشل تحميل سجل النشاطات");
+      toast.error(
+        error.message ||
+          tr("فشل تحميل سجل النشاطات", "Failed to load activity logs"),
+      );
     } finally {
       setIsLoading(false);
     }
@@ -165,7 +171,7 @@ export default function ActivityLogs() {
                         <TableCell>
                           <Badge className={getCategoryColor(log.category)}>
                             {categoryOptions.find(
-                              (c) => c.value === log.category
+                              (c) => c.value === log.category,
                             )?.label || log.category}
                           </Badge>
                         </TableCell>
@@ -183,8 +189,8 @@ export default function ActivityLogs() {
                             {log.status === "success"
                               ? "نجح"
                               : log.status === "failed"
-                              ? "فشل"
-                              : "تحذير"}
+                                ? "فشل"
+                                : "تحذير"}
                           </Badge>
                         </TableCell>
                         <TableCell className="font-mono text-sm">

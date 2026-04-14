@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useEffect, useState } from "react";
 import {
   Card,
   CardContent,
@@ -9,8 +9,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
 import {
   Dialog,
   DialogContent,
@@ -34,38 +32,27 @@ import {
   CreditCard,
   Banknote,
   Smartphone,
-  CheckCircle,
-  Clock,
-  XCircle,
   Eye,
-  Search,
-  Filter,
   EyeOff,
 } from "lucide-react";
 import { useLanguage } from "@/contexts/LanguageContext";
+import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
+import walletService from "@/services/walletService";
+import { io, Socket } from "socket.io-client";
 
 type Currency = "SYP" | "USD";
-type TransactionType = "all" | "deposit" | "withdrawal";
-type TransactionStatus = "all" | "pending" | "completed" | "failed";
-type FilterCurrency = "all" | Currency;
 
-interface Transaction {
-  id: string;
-  type: "deposit" | "withdrawal";
-  amount: number;
-  currency: Currency;
-  status: "pending" | "completed" | "failed";
-  method: string;
-  date: string;
-  reference?: string;
-  notes?: string;
-}
+const SHAM_CASH_ACCOUNT_ID = "a44d9767cf5d5125af08af0e57511d0c";
+const SHAM_CASH_QR_URL = `https://api.qrserver.com/v1/create-qr-code/?size=512x512&data=${encodeURIComponent(
+  SHAM_CASH_ACCOUNT_ID,
+)}`;
 
 export default function Balance() {
-  const { t, isRTL } = useLanguage();
-  const [balanceSYP, setBalanceSYP] = useState(0); // Syrian Pound balance
-  const [balanceUSD, setBalanceUSD] = useState(0); // US Dollar balance
+  const { t, isRTL, language } = useLanguage();
+  const { user } = useAuth();
+  const [balanceSYP, setBalanceSYP] = useState(0);
+  const [balanceUSD, setBalanceUSD] = useState(0);
   const [depositAmount, setDepositAmount] = useState("");
   const [withdrawAmount, setWithdrawAmount] = useState("");
   const [depositMethod, setDepositMethod] = useState("");
@@ -75,58 +62,75 @@ export default function Balance() {
   const [withdrawNotes, setWithdrawNotes] = useState("");
   const [isDepositDialogOpen, setIsDepositDialogOpen] = useState(false);
   const [isWithdrawDialogOpen, setIsWithdrawDialogOpen] = useState(false);
-  const [selectedTransaction, setSelectedTransaction] =
-    useState<Transaction | null>(null);
-  const [isTransactionDetailsOpen, setIsTransactionDetailsOpen] =
-    useState(false);
+  const [showBalanceUsd, setShowBalanceUsd] = useState(true);
+  const [showBalanceSyp, setShowBalanceSyp] = useState(true);
 
-  // Search and Filter States
-  const [searchQuery, setSearchQuery] = useState("");
-  const [filterType, setFilterType] = useState<TransactionType>("all");
-  const [filterCurrency, setFilterCurrency] = useState<FilterCurrency>("all");
-  const [filterStatus, setFilterStatus] = useState<TransactionStatus>("all");
-  const [showBalanceUsd, setShowBalanceUsd] = React.useState(true);
-  const [showBalanceSyp, setShowBalanceSyp] = React.useState(true);
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  // Load balance and transactions data
-  React.useEffect(() => {
-    const loadBalanceData = async () => {
-      try {
-        // TODO: Implement API calls to get real balance and transactions
-        // For now, show empty state
-        setBalanceSYP(0);
-        setBalanceUSD(0);
-        setTransactions([]);
-      } catch (error) {
-        console.error("Error loading balance data:", error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
+  useEffect(() => {
     loadBalanceData();
   }, []);
 
+  useEffect(() => {
+    const userId = String(user?.id || "").trim();
+    if (!userId) return;
+
+    const apiBaseUrl =
+      import.meta.env.VITE_API_URL || "http://localhost:5001/api";
+    const socketUrl = apiBaseUrl.replace(/\/api\/?$/, "");
+
+    const socket: Socket = io(socketUrl, {
+      transports: ["websocket", "polling"],
+      withCredentials: true,
+    });
+
+    socket.on("connect", () => {
+      socket.emit("join-user-room", userId);
+    });
+
+    socket.on("new-notification", (notification: any) => {
+      if (notification?.type === "wallet") {
+        loadBalanceData();
+      }
+    });
+
+    return () => {
+      socket.disconnect();
+    };
+  }, [user?.id]);
+
+  const loadBalanceData = async () => {
+    try {
+      const response = await walletService.getBalance();
+      const balance = response?.balance || {};
+      setBalanceSYP(Number(balance.SYP) || 0);
+      setBalanceUSD(Number(balance.USD) || 0);
+    } catch (error: any) {
+      toast.error(error.message || t("balance.loadError"));
+    }
+  };
+
   const depositMethods = [
-    { value: "credit_card", label: t("creditCard"), icon: CreditCard },
+    { value: "card", label: t("creditCard"), icon: CreditCard },
     {
-      value: "bank_transfer",
+      value: "bank-transfer",
       label: t("balance.bankTransfer"),
       icon: Banknote,
     },
-    { value: "mobile_wallet", label: t("mobileWallet"), icon: Smartphone },
+    {
+      value: "mobile-payment",
+      label: t("balance.shamCash"),
+      icon: Smartphone,
+    },
   ];
 
   const withdrawMethods = [
     {
-      value: "bank_transfer",
+      value: "bank-transfer",
       label: t("balance.bankTransfer"),
       icon: Banknote,
     },
-    { value: "mobile_wallet", label: t("mobileWallet"), icon: Smartphone },
+    { value: "mobile-payment", label: t("mobileWallet"), icon: Smartphone },
   ];
+
   const formatAmountUSD = (amount: number) => {
     return new Intl.NumberFormat("en-US", {
       style: "currency",
@@ -141,45 +145,12 @@ export default function Balance() {
       t("currency.syp")
     );
   };
-  // Filtered Transactions using useMemo for performance
-  const filteredTransactions = useMemo(() => {
-    return transactions.filter((transaction) => {
-      // Search filter
-      const searchLower = searchQuery.toLowerCase();
-      const matchesSearch =
-        transaction.reference?.toLowerCase().includes(searchLower) ||
-        transaction.method.toLowerCase().includes(searchLower) ||
-        transaction.date.includes(searchLower) ||
-        transaction.notes?.toLowerCase().includes(searchLower) ||
-        transaction.amount.toString().includes(searchLower);
-
-      // Type filter
-      const matchesType =
-        filterType === "all" || transaction.type === filterType;
-
-      // Currency filter
-      const matchesCurrency =
-        filterCurrency === "all" || transaction.currency === filterCurrency;
-
-      // Status filter
-      const matchesStatus =
-        filterStatus === "all" || transaction.status === filterStatus;
-
-      return matchesSearch && matchesType && matchesCurrency && matchesStatus;
-    });
-  }, [transactions, searchQuery, filterType, filterCurrency, filterStatus]);
 
   const formatCurrency = (amount: number, currency: Currency) => {
     if (currency === "SYP") {
-      return `${amount.toLocaleString("ar-SY")} ${t("syrianPoundSymbol")}`;
+      return `${amount.toLocaleString(isRTL ? "ar-SY" : "en-US")} ${t("syrianPoundSymbol")}`;
     }
     return `${t("dollarSymbol")}${amount.toFixed(2)}`;
-  };
-
-  const getCurrencyLabel = (currency: Currency) => {
-    return currency === "SYP"
-      ? t("syrianPoundWithCode")
-      : t("usDollarWithCode");
   };
 
   const getMinDepositAmount = (currency: Currency) => {
@@ -198,7 +169,7 @@ export default function Balance() {
     return currency === "SYP" ? balanceSYP : balanceUSD;
   };
 
-  const handleDeposit = () => {
+  const handleDeposit = async () => {
     const amount = parseFloat(depositAmount);
     const minAmount = getMinDepositAmount(depositCurrency);
     const maxAmount = getMaxDepositAmount(depositCurrency);
@@ -230,14 +201,23 @@ export default function Balance() {
       return;
     }
 
-    // Simulate deposit processing
-    toast.success(t("depositRequestSubmitted"));
-    setDepositAmount("");
-    setDepositMethod("");
-    setIsDepositDialogOpen(false);
+    try {
+      await walletService.deposit({
+        amount,
+        currency: depositCurrency,
+        method: depositMethod,
+      });
+      await loadBalanceData();
+      toast.success(t("depositRequestSubmitted"));
+      setDepositAmount("");
+      setDepositMethod("");
+      setIsDepositDialogOpen(false);
+    } catch (error: any) {
+      toast.error(error.message || t("balance.chargeError"));
+    }
   };
 
-  const handleWithdraw = () => {
+  const handleWithdraw = async () => {
     const amount = parseFloat(withdrawAmount);
     const minAmount = getMinWithdrawAmount(withdrawCurrency);
     const currentBalance = getCurrentBalance(withdrawCurrency);
@@ -264,58 +244,27 @@ export default function Balance() {
       return;
     }
 
-    // Simulate withdrawal processing
-    toast.success(t("withdrawalRequestSubmitted"));
-    setWithdrawAmount("");
-    setWithdrawMethod("");
-    setWithdrawNotes("");
-    setIsWithdrawDialogOpen(false);
-  };
-
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case "completed":
-        return <CheckCircle className="h-4 w-4 text-green-500" />;
-      case "pending":
-        return <Clock className="h-4 w-4 text-yellow-500" />;
-      case "failed":
-        return <XCircle className="h-4 w-4 text-red-500" />;
-      default:
-        return null;
+    try {
+      await walletService.requestWithdrawal({
+        amount,
+        currency: withdrawCurrency,
+        method: withdrawMethod,
+        notes: withdrawNotes,
+      });
+      toast.success(t("withdrawalRequestSubmitted"));
+      setWithdrawAmount("");
+      setWithdrawMethod("");
+      setWithdrawNotes("");
+      setIsWithdrawDialogOpen(false);
+      await loadBalanceData();
+    } catch (error: any) {
+      toast.error(error.message || t("balance.withdrawError"));
     }
-  };
-
-  const getStatusBadge = (status: string) => {
-    const variants = {
-      completed: "default",
-      pending: "secondary",
-      failed: "destructive",
-    } as const;
-
-    return (
-      <Badge variant={variants[status as keyof typeof variants] || "default"}>
-        {t(status)}
-      </Badge>
-    );
-  };
-
-  const viewTransactionDetails = (transaction: Transaction) => {
-    setSelectedTransaction(transaction);
-    setIsTransactionDetailsOpen(true);
-  };
-
-  const clearFilters = () => {
-    setSearchQuery("");
-    setFilterType("all");
-    setFilterCurrency("all");
-    setFilterStatus("all");
   };
 
   return (
     <div className={`container mx-auto p-6 space-y-6 ${isRTL ? "rtl" : "ltr"}`}>
-      {/* Balance Overview - Two Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Syrian Pound Balance */}
         <Card className="bg-gradient-to-r from-emerald-600 to-teal-600 text-white">
           <CardHeader>
             <CardTitle className="text-xl font-bold">
@@ -350,7 +299,6 @@ export default function Balance() {
           </CardContent>
         </Card>
 
-        {/* US Dollar Balance */}
         <Card className="bg-gradient-to-r from-blue-600 to-purple-600 text-white">
           <CardHeader>
             <CardTitle className="text-xl font-bold">
@@ -386,7 +334,6 @@ export default function Balance() {
         </Card>
       </div>
 
-      {/* Action Buttons */}
       <div className="flex gap-4 justify-center">
         <Dialog
           open={isDepositDialogOpen}
@@ -398,7 +345,7 @@ export default function Balance() {
               {t("deposit")}
             </Button>
           </DialogTrigger>
-          <DialogContent className="sm:max-w-md">
+          <DialogContent className="sm:max-w-md max-h-[85vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <Plus className="h-5 w-5" />
@@ -420,14 +367,10 @@ export default function Balance() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="SYP">
-                      <div className="flex items-center gap-2">
-                        {t("syrianPoundForLocalRecharge")}
-                      </div>
+                      {t("syrianPoundForLocalRecharge")}
                     </SelectItem>
                     <SelectItem value="USD">
-                      <div className="flex items-center gap-2">
-                        {t("usDollarForInternationalRecharge")}
-                      </div>
+                      {t("usDollarForInternationalRecharge")}
                     </SelectItem>
                   </SelectContent>
                 </Select>
@@ -448,8 +391,9 @@ export default function Balance() {
                   {formatCurrency(
                     getMinDepositAmount(depositCurrency),
                     depositCurrency,
-                  )}{" "}
-                  | {t("maximum")}:{" "}
+                  )}
+                  {" | "}
+                  {t("maximum")}:{" "}
                   {formatCurrency(
                     getMaxDepositAmount(depositCurrency),
                     depositCurrency,
@@ -474,6 +418,41 @@ export default function Balance() {
                   </SelectContent>
                 </Select>
               </div>
+
+              {depositMethod === "mobile-payment" && (
+                <Card className="border-indigo-200 bg-indigo-50">
+                  <CardContent className="pt-5">
+                    <div className="space-y-3 text-center">
+                      <h4 className="font-semibold text-indigo-900">
+                        {language === "ar"
+                          ? "الإيداع عبر شام كاش"
+                          : "Deposit via Sham Cash"}
+                      </h4>
+                      <p className="text-sm text-indigo-800">
+                        {language === "ar"
+                          ? "امسح رمز QR التالي ثم نفّذ التحويل بنفس المبلغ قبل تأكيد الإيداع."
+                          : "Scan the following QR code, then transfer the same amount before confirming deposit."}
+                      </p>
+                      <div className="mx-auto w-fit rounded-xl bg-white p-3 shadow-sm">
+                        <img
+                          src={SHAM_CASH_QR_URL}
+                          alt="Sham Cash QR"
+                          className="h-[180px] w-[180px] rounded"
+                        />
+                      </div>
+                      <div className="text-sm text-indigo-900 space-y-1">
+                        <p className="break-all">
+                          <span className="font-medium">
+                            {language === "ar" ? "المعرّف:" : "ID:"}
+                          </span>{" "}
+                          {SHAM_CASH_ACCOUNT_ID}
+                        </p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
               <div className="flex gap-2">
                 <Button onClick={handleDeposit} className="flex-1">
                   {t("confirmDeposit")}
@@ -526,14 +505,10 @@ export default function Balance() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="SYP">
-                      <div className="flex items-center gap-2">
-                        {t("syrianPoundForLocalRecharge")}
-                      </div>
+                      {t("syrianPoundForLocalRecharge")}
                     </SelectItem>
                     <SelectItem value="USD">
-                      <div className="flex items-center gap-2">
-                        {t("usDollarForInternationalRecharge")}
-                      </div>
+                      {t("usDollarForInternationalRecharge")}
                     </SelectItem>
                   </SelectContent>
                 </Select>
@@ -554,8 +529,9 @@ export default function Balance() {
                   {formatCurrency(
                     getMinWithdrawAmount(withdrawCurrency),
                     withdrawCurrency,
-                  )}{" "}
-                  | {t("availableBalance")}:{" "}
+                  )}
+                  {" | "}
+                  {t("availableBalance")}:{" "}
                   {formatCurrency(
                     getCurrentBalance(withdrawCurrency),
                     withdrawCurrency,
@@ -612,313 +588,6 @@ export default function Balance() {
         </Dialog>
       </div>
 
-      {/* Transaction History */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle>{t("transactionHistory")}</CardTitle>
-              <CardDescription>{t("recentTransactions")}</CardDescription>
-            </div>
-            <Badge variant="secondary" className="text-sm">
-              {t("transactionsCount", {
-                filtered: filteredTransactions.length,
-                total: transactions.length,
-              })}
-            </Badge>
-          </div>
-        </CardHeader>
-        <CardContent>
-          {/* Search and Filter Section */}
-          <div className="space-y-4 mb-6">
-            {/* Search Bar */}
-            <div className="relative">
-              <Search className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder={t("searchTransactionsPlaceholder")}
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pr-10"
-              />
-            </div>
-
-            {/* Filters */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-              <div>
-                <Label className="text-xs mb-1 flex items-center gap-1">
-                  <Filter className="h-3 w-3" />
-                  {t("transactionType")}
-                </Label>
-                <Select
-                  value={filterType}
-                  onValueChange={(value: string) =>
-                    setFilterType(value as TransactionType)
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">{t("all")}</SelectItem>
-                    <SelectItem value="deposit">{t("deposit")}</SelectItem>
-                    <SelectItem value="withdrawal">
-                      {t("withdrawal")}
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div>
-                <Label className="text-xs mb-1 flex items-center gap-1">
-                  <Filter className="h-3 w-3" />
-                  {t("currency")}
-                </Label>
-                <Select
-                  value={filterCurrency}
-                  onValueChange={(value: string) =>
-                    setFilterCurrency(value as FilterCurrency)
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">{t("all")}</SelectItem>
-                    <SelectItem value="SYP">{t("syrianPound")}</SelectItem>
-                    <SelectItem value="USD">{t("usDollar")}</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div>
-                <Label className="text-xs mb-1 flex items-center gap-1">
-                  <Filter className="h-3 w-3" />
-                  {t("status")}
-                </Label>
-                <Select
-                  value={filterStatus}
-                  onValueChange={(value: string) =>
-                    setFilterStatus(value as TransactionStatus)
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">{t("all")}</SelectItem>
-                    <SelectItem value="completed">{t("completed")}</SelectItem>
-                    <SelectItem value="pending">{t("pending")}</SelectItem>
-                    <SelectItem value="failed">{t("failed")}</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="flex items-end">
-                <Button
-                  variant="outline"
-                  onClick={clearFilters}
-                  className="w-full"
-                >
-                  {t("clearFilters")}
-                </Button>
-              </div>
-            </div>
-          </div>
-
-          <Separator className="mb-4" />
-
-          {/* Transactions List */}
-          <div className="space-y-4">
-            {filteredTransactions.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground">
-                <Search className="h-12 w-12 mx-auto mb-3 opacity-50" />
-                <p>{t("noMatchingTransactions")}</p>
-              </div>
-            ) : (
-              filteredTransactions.map((transaction) => (
-                <div
-                  key={transaction.id}
-                  className="flex items-center justify-between p-4 border rounded-lg hover:bg-muted/50 transition-colors"
-                >
-                  <div className="flex items-center gap-4">
-                    <div
-                      className={`p-2 rounded-full ${
-                        transaction.type === "deposit"
-                          ? "bg-green-100 text-green-600"
-                          : "bg-red-100 text-red-600"
-                      }`}
-                    >
-                      {transaction.type === "deposit" ? (
-                        <Plus className="h-4 w-4" />
-                      ) : (
-                        <Minus className="h-4 w-4" />
-                      )}
-                    </div>
-                    <div>
-                      <div className="font-medium">
-                        {transaction.type === "deposit"
-                          ? t("deposit")
-                          : t("withdrawal")}
-                      </div>
-                      <div className="text-sm text-muted-foreground">
-                        {transaction.method} • {transaction.date}
-                      </div>
-                      {transaction.reference && (
-                        <div className="text-xs text-muted-foreground">
-                          {t("reference")}: {transaction.reference}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-4">
-                    <div className="text-right">
-                      <div
-                        className={`font-semibold ${
-                          transaction.type === "deposit"
-                            ? "text-green-600"
-                            : "text-red-600"
-                        }`}
-                      >
-                        {transaction.type === "deposit" ? "+" : "-"}
-                        {formatCurrency(
-                          transaction.amount,
-                          transaction.currency,
-                        )}
-                      </div>
-                      <div className="text-xs text-muted-foreground">
-                        {getCurrencyLabel(transaction.currency)}
-                      </div>
-                      <div className="flex items-center gap-1 mt-1">
-                        {getStatusIcon(transaction.status)}
-                        {getStatusBadge(transaction.status)}
-                      </div>
-                    </div>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => viewTransactionDetails(transaction)}
-                    >
-                      <Eye className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Transaction Details Dialog */}
-      <Dialog
-        open={isTransactionDetailsOpen}
-        onOpenChange={setIsTransactionDetailsOpen}
-      >
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>{t("transactionDetails")}</DialogTitle>
-          </DialogHeader>
-          {selectedTransaction && (
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label className="text-sm font-medium text-muted-foreground">
-                    {t("type")}
-                  </Label>
-                  <div className="flex items-center gap-2 mt-1">
-                    <div
-                      className={`p-1 rounded-full ${
-                        selectedTransaction.type === "deposit"
-                          ? "bg-green-100 text-green-600"
-                          : "bg-red-100 text-red-600"
-                      }`}
-                    >
-                      {selectedTransaction.type === "deposit" ? (
-                        <Plus className="h-3 w-3" />
-                      ) : (
-                        <Minus className="h-3 w-3" />
-                      )}
-                    </div>
-                    {selectedTransaction.type === "deposit"
-                      ? t("deposit")
-                      : t("withdrawal")}
-                  </div>
-                </div>
-                <div>
-                  <Label className="text-sm font-medium text-muted-foreground">
-                    {t("amount")}
-                  </Label>
-                  <div
-                    className={`mt-1 font-semibold ${
-                      selectedTransaction.type === "deposit"
-                        ? "text-green-600"
-                        : "text-red-600"
-                    }`}
-                  >
-                    {selectedTransaction.type === "deposit" ? "+" : "-"}
-                    {formatCurrency(
-                      selectedTransaction.amount,
-                      selectedTransaction.currency,
-                    )}
-                  </div>
-                  <div className="text-xs text-muted-foreground mt-1">
-                    {getCurrencyLabel(selectedTransaction.currency)}
-                  </div>
-                </div>
-                <div>
-                  <Label className="text-sm font-medium text-muted-foreground">
-                    {t("status")}
-                  </Label>
-                  <div className="flex items-center gap-1 mt-1">
-                    {getStatusIcon(selectedTransaction.status)}
-                    {getStatusBadge(selectedTransaction.status)}
-                  </div>
-                </div>
-                <div>
-                  <Label className="text-sm font-medium text-muted-foreground">
-                    {t("method")}
-                  </Label>
-                  <div className="mt-1">{selectedTransaction.method}</div>
-                </div>
-                <div>
-                  <Label className="text-sm font-medium text-muted-foreground">
-                    {t("date")}
-                  </Label>
-                  <div className="mt-1">{selectedTransaction.date}</div>
-                </div>
-                {selectedTransaction.reference && (
-                  <div>
-                    <Label className="text-sm font-medium text-muted-foreground">
-                      {t("reference")}
-                    </Label>
-                    <div className="mt-1 font-mono text-sm">
-                      {selectedTransaction.reference}
-                    </div>
-                  </div>
-                )}
-              </div>
-              {selectedTransaction.notes && (
-                <div>
-                  <Label className="text-sm font-medium text-muted-foreground">
-                    {t("notes")}
-                  </Label>
-                  <div className="mt-1 p-2 bg-muted rounded text-sm">
-                    {selectedTransaction.notes}
-                  </div>
-                </div>
-              )}
-              <Separator />
-              <Button
-                onClick={() => setIsTransactionDetailsOpen(false)}
-                className="w-full"
-              >
-                {t("close")}
-              </Button>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
-
-      {/* Important Notice */}
       <Card className="border-amber-200 bg-amber-50">
         <CardContent className="pt-6">
           <div className="flex items-start gap-3">

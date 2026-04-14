@@ -82,9 +82,12 @@ const shipmentSchema = new mongoose.Schema(
     shippingCompany: {
       id: { type: String, required: true },
       name: { type: String, required: true },
+      trackingUrlTemplate: { type: String, default: "" },
     },
     cost: {
       amount: { type: Number, required: true },
+      baseAmount: { type: Number, default: 0 },
+      codFee: { type: Number, default: 0 },
       currency: { type: String, enum: ["USD", "SYP"], required: true },
       paymentMethod: {
         type: String,
@@ -95,6 +98,7 @@ const shipmentSchema = new mongoose.Schema(
       volumetricWeight: { type: Number },
       actualWeight: { type: Number },
       billingWeight: { type: Number },
+      volumetricDivisor: { type: Number, default: 6000 },
     },
     status: {
       type: String,
@@ -119,6 +123,86 @@ const shipmentSchema = new mongoose.Schema(
         updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
       },
     ],
+    cancellationRequest: {
+      isRequested: {
+        type: Boolean,
+        default: false,
+      },
+      reason: {
+        type: String,
+        default: "",
+      },
+      status: {
+        type: String,
+        enum: ["pending", "approved", "rejected"],
+        default: null,
+      },
+      requestedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+      },
+      requestedAt: {
+        type: Date,
+      },
+      reviewedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+      },
+      reviewedAt: {
+        type: Date,
+      },
+      reviewNote: {
+        type: String,
+        default: "",
+      },
+    },
+    weightAdjustment: {
+      isAdjusted: {
+        type: Boolean,
+        default: false,
+      },
+      originalWeight: {
+        type: Number,
+      },
+      correctedWeight: {
+        type: Number,
+      },
+      note: {
+        type: String,
+        default: "",
+      },
+      adjustedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+      },
+      adjustedAt: {
+        type: Date,
+      },
+      balanceDeduction: {
+        required: {
+          type: Boolean,
+          default: false,
+        },
+        amount: {
+          type: Number,
+          default: 0,
+        },
+        currency: {
+          type: String,
+          enum: ["USD", "SYP", ""],
+          default: "",
+        },
+        status: {
+          type: String,
+          enum: ["not-required", "deducted", "insufficient-cancelled"],
+          default: "not-required",
+        },
+        note: {
+          type: String,
+          default: "",
+        },
+      },
+    },
     notes: {
       type: String,
       default: "",
@@ -145,8 +229,8 @@ const shipmentSchema = new mongoose.Schema(
   },
 );
 
-// Generate tracking number
-shipmentSchema.pre("save", async function (next) {
+// Generate tracking number before validation so required validation passes.
+shipmentSchema.pre("validate", function (next) {
   if (!this.trackingNumber) {
     const prefix = "KSH";
     const random = Math.random().toString(36).substring(2, 8).toUpperCase();
