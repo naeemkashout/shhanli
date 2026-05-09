@@ -55,7 +55,16 @@ export default function ShipmentsManagement() {
 
   useEffect(() => {
     fetchShipments();
-  }, [page, search, statusFilter, companyFilter, companyNameFilter, senderNameFilter, startDate, endDate]);
+  }, [
+    page,
+    search,
+    statusFilter,
+    companyFilter,
+    companyNameFilter,
+    senderNameFilter,
+    startDate,
+    endDate,
+  ]);
 
   useEffect(() => {
     if (!user || isCompanyAdmin) return;
@@ -418,7 +427,8 @@ export default function ShipmentsManagement() {
               </div>
               <div className="flex items-center gap-2">
                 <div className="text-sm text-slate-600">
-                  عدد الشحنات: <span className="font-semibold">{shipmentsCount}</span>
+                  عدد الشحنات:{" "}
+                  <span className="font-semibold">{shipmentsCount}</span>
                 </div>
               </div>
             </div>

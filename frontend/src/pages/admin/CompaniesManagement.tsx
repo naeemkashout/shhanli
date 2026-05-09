@@ -449,30 +449,30 @@ export default function CompaniesManagement() {
       }))
       .filter((offer) => offer.title || offer.titleEn);
 
-      const missingRequiredDate = cleanedOffers.some(
-        (offer) => !offer.startAt || !offer.endAt,
-      );
+    const missingRequiredDate = cleanedOffers.some(
+      (offer) => !offer.startAt || !offer.endAt,
+    );
 
     const invalidOfferDate = cleanedOffers.some(
       (offer) => offer.startAt && offer.endAt && offer.endAt < offer.startAt,
     );
 
-      return { cleanedOffers, invalidOfferDate, missingRequiredDate };
+    return { cleanedOffers, invalidOfferDate, missingRequiredDate };
   };
 
   const handleSaveOffers = async () => {
-      const { cleanedOffers, invalidOfferDate, missingRequiredDate } =
-        buildCleanedOffers();
+    const { cleanedOffers, invalidOfferDate, missingRequiredDate } =
+      buildCleanedOffers();
 
-      if (missingRequiredDate) {
-        toast.error(
-          tr(
-            "يجب تحديد تاريخ ووقت بداية ونهاية العرض",
-            "Offer start and end date/time are required",
-          ),
-        );
-        return;
-      }
+    if (missingRequiredDate) {
+      toast.error(
+        tr(
+          "يجب تحديد تاريخ ووقت بداية ونهاية العرض",
+          "Offer start and end date/time are required",
+        ),
+      );
+      return;
+    }
 
     if (invalidOfferDate) {
       toast.error(
@@ -1353,7 +1353,7 @@ export default function CompaniesManagement() {
                   <div className="flex items-center justify-between">
                     <p className="text-sm text-slate-500">
                       هذه العروض تظهر بشكل مستقل عن معلومات الشركة، مع تفاصيل
-                        التسعير فقط.
+                      التسعير فقط.
                     </p>
                     <Button type="button" variant="outline" onClick={addOffer}>
                       <Plus className="mr-2 h-4 w-4" />
@@ -1548,8 +1548,8 @@ export default function CompaniesManagement() {
                             الزر ثابت: اشحن الآن
                           </p>
                           <p className="mt-1">
-                            الرابط يُنشأ تلقائياً إلى صفحة إنشاء الشحنة مع الشركة
-                            المرتبطة فقط، لذلك لا يمكن تعديله هنا.
+                            الرابط يُنشأ تلقائياً إلى صفحة إنشاء الشحنة مع
+                            الشركة المرتبطة فقط، لذلك لا يمكن تعديله هنا.
                           </p>
                         </div>
                         <div>

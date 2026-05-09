@@ -230,14 +230,16 @@ export default function Dashboard() {
           )
           .filter((offer) => {
             if (!offer?.isActive) return false;
-            if (!String(offer.title || offer.titleEn || "").trim()) return false;
+            if (!String(offer.title || offer.titleEn || "").trim())
+              return false;
 
             const startAt = offer.startAt
               ? new Date(offer.startAt).getTime()
               : null;
             const endAt = offer.endAt ? new Date(offer.endAt).getTime() : null;
 
-            if (startAt && !Number.isNaN(startAt) && startAt > now) return false;
+            if (startAt && !Number.isNaN(startAt) && startAt > now)
+              return false;
             if (endAt && !Number.isNaN(endAt) && endAt < now) return false;
             return true;
           })
@@ -328,65 +330,72 @@ export default function Dashboard() {
     return primary || fallback;
   };
 
-  const offerPriceItems = (offer: DashboardOffer) => [
-    {
-      label: language === "ar" ? "السعر المحلي" : "Local price",
-      value:
-        Number(offer.localPriceSYP || offer.localPrice || 0) > 0
-          ? formatAmountSYP(Number(offer.localPriceSYP || offer.localPrice || 0))
-          : offer.localPriceUSD
-            ? formatAmountUSDNoSymbol(Number(offer.localPriceUSD))
+  const offerPriceItems = (offer: DashboardOffer) =>
+    [
+      {
+        label: language === "ar" ? "السعر المحلي" : "Local price",
+        value:
+          Number(offer.localPriceSYP || offer.localPrice || 0) > 0
+            ? formatAmountSYP(
+                Number(offer.localPriceSYP || offer.localPrice || 0),
+              )
+            : offer.localPriceUSD
+              ? formatAmountUSDNoSymbol(Number(offer.localPriceUSD))
+              : null,
+      },
+      {
+        label: language === "ar" ? "السعر الدولي" : "International price",
+        value:
+          Number(offer.internationalPriceUSD || offer.internationalPrice || 0) >
+          0
+            ? formatAmountUSDNoSymbol(
+                Number(
+                  offer.internationalPriceUSD || offer.internationalPrice || 0,
+                ),
+              )
+            : offer.internationalPriceSYP
+              ? formatAmountSYP(Number(offer.internationalPriceSYP))
+              : null,
+      },
+      {
+        label: "COD",
+        value:
+          Number(offer.codFeeSYP || offer.codFeeUSD || 0) > 0
+            ? `${formatAmountSYP(Number(offer.codFeeSYP || 0))} | ${formatAmountUSDNoSymbol(Number(offer.codFeeUSD || 0))}`
             : null,
-    },
-    {
-      label: language === "ar" ? "السعر الدولي" : "International price",
-      value:
-        Number(offer.internationalPriceUSD || offer.internationalPrice || 0) > 0
-          ? formatAmountUSDNoSymbol(
-              Number(offer.internationalPriceUSD || offer.internationalPrice || 0),
-            )
-          : offer.internationalPriceSYP
-            ? formatAmountSYP(Number(offer.internationalPriceSYP))
+      },
+      {
+        label: language === "ar" ? "السريع" : "Express",
+        value:
+          Number(offer.expressFeeSYP || offer.expressFeeUSD || 0) > 0
+            ? `${formatAmountSYP(Number(offer.expressFeeSYP || 0))} | ${formatAmountUSDNoSymbol(Number(offer.expressFeeUSD || 0))}`
             : null,
-    },
-    {
-      label: "COD",
-      value:
-        Number(offer.codFeeSYP || offer.codFeeUSD || 0) > 0
-          ? `${formatAmountSYP(Number(offer.codFeeSYP || 0))} | ${formatAmountUSDNoSymbol(Number(offer.codFeeUSD || 0))}`
-          : null,
-    },
-    {
-      label: language === "ar" ? "السريع" : "Express",
-      value:
-        Number(offer.expressFeeSYP || offer.expressFeeUSD || 0) > 0
-          ? `${formatAmountSYP(Number(offer.expressFeeSYP || 0))} | ${formatAmountUSDNoSymbol(Number(offer.expressFeeUSD || 0))}`
-          : null,
-    },
-    {
-      label: language === "ar" ? "التغليف" : "Packaging",
-      value:
-        Number(offer.packagingFeeSYP || offer.packagingFeeUSD || 0) > 0
-          ? `${formatAmountSYP(Number(offer.packagingFeeSYP || 0))} | ${formatAmountUSDNoSymbol(Number(offer.packagingFeeUSD || 0))}`
-          : null,
-    },
-    {
-      label: language === "ar" ? "المدة" : "Duration",
-      value:
-        Number(offer.durationDays || 0) > 0 || Number(offer.durationHours || 0) > 0
-          ? [
-              Number(offer.durationDays || 0) > 0
-                ? `${Number(offer.durationDays)} ${language === "ar" ? "يوم" : "day"}`
-                : null,
-              Number(offer.durationHours || 0) > 0
-                ? `${Number(offer.durationHours)} ${language === "ar" ? "ساعة" : "hour"}`
-                : null,
-            ]
-              .filter(Boolean)
-              .join(" + ")
-          : null,
-    },
-  ].filter((item) => Boolean(item.value));
+      },
+      {
+        label: language === "ar" ? "التغليف" : "Packaging",
+        value:
+          Number(offer.packagingFeeSYP || offer.packagingFeeUSD || 0) > 0
+            ? `${formatAmountSYP(Number(offer.packagingFeeSYP || 0))} | ${formatAmountUSDNoSymbol(Number(offer.packagingFeeUSD || 0))}`
+            : null,
+      },
+      {
+        label: language === "ar" ? "المدة" : "Duration",
+        value:
+          Number(offer.durationDays || 0) > 0 ||
+          Number(offer.durationHours || 0) > 0
+            ? [
+                Number(offer.durationDays || 0) > 0
+                  ? `${Number(offer.durationDays)} ${language === "ar" ? "يوم" : "day"}`
+                  : null,
+                Number(offer.durationHours || 0) > 0
+                  ? `${Number(offer.durationHours)} ${language === "ar" ? "ساعة" : "hour"}`
+                  : null,
+              ]
+                .filter(Boolean)
+                .join(" + ")
+            : null,
+      },
+    ].filter((item) => Boolean(item.value));
 
   const moveOffer = (direction: "next" | "prev") => {
     if (!offers.length) return;
@@ -527,7 +536,9 @@ export default function Dashboard() {
                 type="button"
                 onClick={() => moveOffer("prev")}
                 className="hidden lg:block overflow-hidden rounded-3xl border border-slate-200/70 bg-transparent shadow-none cursor-pointer"
-                aria-label={language === "ar" ? "العرض السابق" : "Previous offer"}
+                aria-label={
+                  language === "ar" ? "العرض السابق" : "Previous offer"
+                }
               >
                 {previousOffer?.imageUrl ? (
                   <img
@@ -562,10 +573,24 @@ export default function Dashboard() {
                       </div>
                       <div className="flex flex-wrap gap-2 text-xs">
                         <span className="rounded-full bg-white/15 px-3 py-1 backdrop-blur-sm">
-                          {language === "ar" ? "محلي" : "Local"}: {formatAmountSYP(Number(previousOffer?.localPriceSYP ?? previousOffer?.localPrice ?? 0))}
+                          {language === "ar" ? "محلي" : "Local"}:{" "}
+                          {formatAmountSYP(
+                            Number(
+                              previousOffer?.localPriceSYP ??
+                                previousOffer?.localPrice ??
+                                0,
+                            ),
+                          )}
                         </span>
                         <span className="rounded-full bg-white/15 px-3 py-1 backdrop-blur-sm">
-                          {language === "ar" ? "دولي" : "International"}: {formatAmountUSD(Number(previousOffer?.internationalPriceUSD ?? previousOffer?.internationalPrice ?? 0))}
+                          {language === "ar" ? "دولي" : "International"}:{" "}
+                          {formatAmountUSD(
+                            Number(
+                              previousOffer?.internationalPriceUSD ??
+                                previousOffer?.internationalPrice ??
+                                0,
+                            ),
+                          )}
                         </span>
                       </div>
                     </div>
@@ -576,7 +601,7 @@ export default function Dashboard() {
               <Card className="overflow-hidden border-0 bg-transparent shadow-none">
                 <div
                   key={`${activeOffer._id || activeOfferIndex}`}
-                    className="relative min-h-[240px] sm:min-h-[280px] animate-in fade-in slide-in-from-bottom-3 duration-500"
+                  className="relative min-h-[240px] sm:min-h-[280px] animate-in fade-in slide-in-from-bottom-3 duration-500"
                   style={
                     activeOffer.imageUrl
                       ? undefined
@@ -702,10 +727,24 @@ export default function Dashboard() {
                       </div>
                       <div className="flex flex-wrap gap-2 text-xs">
                         <span className="rounded-full bg-white/15 px-3 py-1 backdrop-blur-sm">
-                          {language === "ar" ? "محلي" : "Local"}: {formatAmountSYP(Number(nextOffer?.localPriceSYP ?? nextOffer?.localPrice ?? 0))}
+                          {language === "ar" ? "محلي" : "Local"}:{" "}
+                          {formatAmountSYP(
+                            Number(
+                              nextOffer?.localPriceSYP ??
+                                nextOffer?.localPrice ??
+                                0,
+                            ),
+                          )}
                         </span>
                         <span className="rounded-full bg-white/15 px-3 py-1 backdrop-blur-sm">
-                          {language === "ar" ? "دولي" : "International"}: {formatAmountUSD(Number(nextOffer?.internationalPriceUSD ?? nextOffer?.internationalPrice ?? 0))}
+                          {language === "ar" ? "دولي" : "International"}:{" "}
+                          {formatAmountUSD(
+                            Number(
+                              nextOffer?.internationalPriceUSD ??
+                                nextOffer?.internationalPrice ??
+                                0,
+                            ),
+                          )}
                         </span>
                       </div>
                     </div>

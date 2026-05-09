@@ -53,11 +53,7 @@ const paymentIdPatterns = [
   /[A-Za-z0-9_-]{12,}/,
 ];
 
-const paymentIdKeyPatterns = [
-  /payment[_-]?id/i,
-  /transaction[_-]?id/i,
-  /id$/i,
-];
+const paymentIdKeyPatterns = [/payment[_-]?id/i, /transaction[_-]?id/i, /id$/i];
 
 const urlKeyPatterns = [/payment[_-]?url/i, /redirect[_-]?url/i, /url$/i];
 
@@ -141,7 +137,10 @@ const extractIdFromUrl = (text) => {
 
 const getGatewayPrimitiveMatch = (payload, keyPatterns, valueMatcher) => {
   const found = searchDeep(payload, (entry, key) => {
-    if (typeof key === "string" && keyPatterns.some((pattern) => pattern.test(key))) {
+    if (
+      typeof key === "string" &&
+      keyPatterns.some((pattern) => pattern.test(key))
+    ) {
       if (valueMatcher(String(entry || ""))) return true;
     }
     return false;
@@ -259,7 +258,9 @@ const callSyriatel = async ({ path, body }) => {
       parsed: data,
     });
     throw new Error(
-      data?.errorDesc || data?.message || `Syriatel request failed (${response.status})`,
+      data?.errorDesc ||
+        data?.message ||
+        `Syriatel request failed (${response.status})`,
     );
   }
 
@@ -315,7 +316,9 @@ const getGatewayStatusText = (payload) => {
     payload?.data?.paymentStatus ||
     "";
 
-  return String(rawStatus || "").toLowerCase().trim();
+  return String(rawStatus || "")
+    .toLowerCase()
+    .trim();
 };
 
 const isGatewaySuccess = (statusText) =>
@@ -335,7 +338,10 @@ const getGatewayPaymentId = (payload) => {
 
   for (const candidate of candidates) {
     const directMatch = searchDeep(candidate, (entry, key) => {
-      if (!key || !paymentIdKeyPatterns.some((pattern) => pattern.test(String(key)))) {
+      if (
+        !key ||
+        !paymentIdKeyPatterns.some((pattern) => pattern.test(String(key)))
+      ) {
         return false;
       }
 
@@ -345,7 +351,8 @@ const getGatewayPaymentId = (payload) => {
     });
 
     if (directMatch !== undefined) {
-      const inferred = extractIdFromUrl(directMatch) || String(directMatch).trim();
+      const inferred =
+        extractIdFromUrl(directMatch) || String(directMatch).trim();
       if (inferred) return inferred;
     }
   }
@@ -431,7 +438,9 @@ const callPaymera = async ({ method, path, body }) => {
       parsed: data,
     });
     throw new Error(
-      data?.message || data?.error || `Paymera request failed (${response.status})`,
+      data?.message ||
+        data?.error ||
+        `Paymera request failed (${response.status})`,
     );
   }
 
@@ -608,7 +617,10 @@ exports.deposit = async (req, res) => {
       transaction.description = "Syriatel Cash customer MSISDN is missing";
       transaction.processedAt = new Date();
       transaction.metadata.set("syriatelStatus", "failed");
-      transaction.metadata.set("syriatelLastError", "Customer MSISDN is missing");
+      transaction.metadata.set(
+        "syriatelLastError",
+        "Customer MSISDN is missing",
+      );
       await transaction.save();
 
       return res.status(400).json({
@@ -635,7 +647,10 @@ exports.deposit = async (req, res) => {
       transaction.processedAt = new Date();
       transaction.metadata.set("syriatelStatus", "request-failed");
       transaction.metadata.set("syriatelLastErrorCode", errorCode || "");
-      transaction.metadata.set("syriatelLastError", errorDesc || "Payment request failed");
+      transaction.metadata.set(
+        "syriatelLastError",
+        errorDesc || "Payment request failed",
+      );
       await transaction.save();
 
       return res.status(502).json({
@@ -740,7 +755,10 @@ exports.checkDepositStatus = async (req, res) => {
         });
       }
 
-      if (isGatewaySuccess(gatewayStatusText) && transaction.status === "pending") {
+      if (
+        isGatewaySuccess(gatewayStatusText) &&
+        transaction.status === "pending"
+      ) {
         const user = await User.findById(req.user.id);
 
         if (!user) {
@@ -762,7 +780,10 @@ exports.checkDepositStatus = async (req, res) => {
         transaction.balanceAfter = Number(user.balance[currency] || 0);
         transaction.description = "Paymera eGate deposit completed";
         transaction.processedAt = new Date();
-        transaction.metadata.set("paymentUrl", String(transaction.metadata?.get?.("paymentUrl") || ""));
+        transaction.metadata.set(
+          "paymentUrl",
+          String(transaction.metadata?.get?.("paymentUrl") || ""),
+        );
         await transaction.save();
 
         await ActivityLog.create({
@@ -811,7 +832,10 @@ exports.checkDepositStatus = async (req, res) => {
         });
       }
 
-      if (isGatewayFailed(gatewayStatusText) && transaction.status === "pending") {
+      if (
+        isGatewayFailed(gatewayStatusText) &&
+        transaction.status === "pending"
+      ) {
         transaction.status = gatewayStatusText.includes("cancel")
           ? "cancelled"
           : "failed";
@@ -853,7 +877,9 @@ exports.checkDepositStatus = async (req, res) => {
       message: "Deposit status fetched",
       data: {
         paymentId,
-        gatewayStatus: String(transaction.metadata?.get?.("syriatelStatus") || "pending"),
+        gatewayStatus: String(
+          transaction.metadata?.get?.("syriatelStatus") || "pending",
+        ),
         transactionStatus: transaction.status,
         isFinal: ["completed", "failed", "cancelled"].includes(
           transaction.status,
@@ -924,7 +950,10 @@ exports.confirmDeposit = async (req, res) => {
     if (errorCode !== "0") {
       transaction.metadata.set("syriatelStatus", "confirmation-failed");
       transaction.metadata.set("syriatelLastErrorCode", errorCode || "");
-      transaction.metadata.set("syriatelLastError", errorDesc || "OTP confirmation failed");
+      transaction.metadata.set(
+        "syriatelLastError",
+        errorDesc || "OTP confirmation failed",
+      );
 
       if (isSyriatelFinalConfirmationError(errorCode)) {
         transaction.status = "failed";
@@ -1059,7 +1088,10 @@ exports.resendDepositOtp = async (req, res) => {
     if (errorCode !== "0") {
       transaction.metadata.set("syriatelStatus", "otp-resend-failed");
       transaction.metadata.set("syriatelLastErrorCode", errorCode || "");
-      transaction.metadata.set("syriatelLastError", errorDesc || "Failed to resend OTP");
+      transaction.metadata.set(
+        "syriatelLastError",
+        errorDesc || "Failed to resend OTP",
+      );
       await transaction.save();
 
       return res.status(400).json({
@@ -1119,7 +1151,9 @@ exports.cancelDeposit = async (req, res) => {
     });
 
     if (transaction) {
-      const gateway = String(transaction.metadata?.get?.("gateway") || "").trim();
+      const gateway = String(
+        transaction.metadata?.get?.("gateway") || "",
+      ).trim();
 
       if (gateway === "paymera-egate") {
         const gatewayResponse = await callPaymera({

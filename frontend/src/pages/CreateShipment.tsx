@@ -616,7 +616,9 @@ export default function CreateShipment() {
     if (receivers.length === 0) return [];
 
     if (presetCompanyId) {
-      return shippingCompanies.filter((company) => company._id === presetCompanyId);
+      return shippingCompanies.filter(
+        (company) => company._id === presetCompanyId,
+      );
     }
 
     const normalizeValue = (value: string) => value.trim().toLowerCase();
@@ -1332,7 +1334,6 @@ export default function CreateShipment() {
 
   const handleSubmit = async () => {
     try {
-
       const selectedVolumetricDivisor = getSelectedVolumetricDivisor();
 
       const shipmentData = {
@@ -1616,10 +1617,12 @@ export default function CreateShipment() {
 
   const selectedCompany = getSelectedCompany();
   const allowedShippingTypes = selectedCompany
-    ? [
+    ? ([
         selectedCompany.supportsLocal ? ("local" as const) : null,
-        selectedCompany.supportsInternational ? ("international" as const) : null,
-      ].filter(Boolean) as Array<"local" | "international">
+        selectedCompany.supportsInternational
+          ? ("international" as const)
+          : null,
+      ].filter(Boolean) as Array<"local" | "international">)
     : ["local", "international"];
 
   const steps = [
@@ -1715,7 +1718,9 @@ export default function CreateShipment() {
                             )}
                           </div>
                           <h4 className="text-lg font-semibold text-gray-900 mb-2">
-                            {isLocal ? t("shipment.local") : t("shipment.international")}
+                            {isLocal
+                              ? t("shipment.local")
+                              : t("shipment.international")}
                           </h4>
                           <p className="text-gray-600 text-sm mb-3">
                             {isLocal
@@ -1723,9 +1728,14 @@ export default function CreateShipment() {
                               : t("shipment.internationalDesc")}
                           </p>
                           <p className="text-sm font-medium text-blue-600">
-                            {shippingCompanies.filter((company) =>
-                              isLocal ? company.supportsLocal : company.supportsInternational,
-                            ).length} {t("shipment.companiesAvailable")}
+                            {
+                              shippingCompanies.filter((company) =>
+                                isLocal
+                                  ? company.supportsLocal
+                                  : company.supportsInternational,
+                              ).length
+                            }{" "}
+                            {t("shipment.companiesAvailable")}
                           </p>
                           <p className="text-xs text-gray-500 mt-1">
                             {isLocal

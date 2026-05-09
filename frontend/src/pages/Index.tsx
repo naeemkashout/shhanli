@@ -81,14 +81,16 @@ export default function WelcomePage({
           )
           .filter((offer) => {
             if (!offer?.isActive) return false;
-            if (!String(offer.title || offer.titleEn || "").trim()) return false;
+            if (!String(offer.title || offer.titleEn || "").trim())
+              return false;
 
             const startAt = offer.startAt
               ? new Date(offer.startAt).getTime()
               : null;
             const endAt = offer.endAt ? new Date(offer.endAt).getTime() : null;
 
-            if (startAt && !Number.isNaN(startAt) && startAt > now) return false;
+            if (startAt && !Number.isNaN(startAt) && startAt > now)
+              return false;
             if (endAt && !Number.isNaN(endAt) && endAt < now) return false;
             return true;
           })
@@ -113,7 +115,10 @@ export default function WelcomePage({
     return () => window.clearInterval(timer);
   }, []);
 
-  const getOfferText = (slide: Slide, field: "title" | "subtitle" | "ctaText") => {
+  const getOfferText = (
+    slide: Slide,
+    field: "title" | "subtitle" | "ctaText",
+  ) => {
     const englishField = `${field}En` as "titleEn" | "subtitleEn" | "ctaTextEn";
     const primary =
       language === "ar"
@@ -153,64 +158,70 @@ export default function WelcomePage({
     }).format(Number(amount || 0))} $`;
   };
 
-  const offerPriceItems = (slide: Slide) => [
-    {
-      label: tr("السعر المحلي", "Local price"),
-      value: Number(slide.localPriceSYP || slide.localPriceUSD || 0)
-        ? formatCurrency(Number(slide.localPriceSYP || 0), "SYP") ||
-          formatCurrency(Number(slide.localPriceUSD || 0), "USD")
-        : null,
-      fallback: slide.localPriceUSD ? formatCurrency(Number(slide.localPriceUSD), "USD") : null,
-    },
-    {
-      label: tr("السعر الدولي", "International price"),
-      value: Number(slide.internationalPriceUSD || slide.internationalPriceSYP || 0)
-        ? formatCurrency(Number(slide.internationalPriceUSD || 0), "USD") ||
-          formatCurrency(Number(slide.internationalPriceSYP || 0), "SYP")
-        : null,
-      fallback: slide.internationalPriceSYP
-        ? formatCurrency(Number(slide.internationalPriceSYP), "SYP")
-        : null,
-    },
-    {
-      label: "COD",
-      value: Number(slide.codFeeSYP || slide.codFeeUSD || 0)
-        ? `${formatCurrency(Number(slide.codFeeSYP || 0), "SYP")} | ${formatCurrency(Number(slide.codFeeUSD || 0), "USD")}`
-        : null,
-      fallback: null,
-    },
-    {
-      label: tr("السريع", "Express"),
-      value: Number(slide.expressFeeSYP || slide.expressFeeUSD || 0)
-        ? `${formatCurrency(Number(slide.expressFeeSYP || 0), "SYP")} | ${formatCurrency(Number(slide.expressFeeUSD || 0), "USD")}`
-        : null,
-      fallback: null,
-    },
-    {
-      label: tr("التغليف", "Packaging"),
-      value: Number(slide.packagingFeeSYP || slide.packagingFeeUSD || 0)
-        ? `${formatCurrency(Number(slide.packagingFeeSYP || 0), "SYP")} | ${formatCurrency(Number(slide.packagingFeeUSD || 0), "USD")}`
-        : null,
-      fallback: null,
-    },
-    {
-      label: tr("المدة", "Duration"),
-      value: [slide.durationDays, slide.durationHours]
-        .some((part) => Number(part || 0) > 0)
-        ? [
-            Number(slide.durationDays || 0) > 0
-              ? `${Number(slide.durationDays)} ${tr("يوم", "day")}`
-              : null,
-            Number(slide.durationHours || 0) > 0
-              ? `${Number(slide.durationHours)} ${tr("ساعة", "hour")}`
-              : null,
-          ]
-            .filter(Boolean)
-            .join(" + ")
-        : null,
-      fallback: null,
-    },
-  ].filter((item) => Boolean(item.value || item.fallback));
+  const offerPriceItems = (slide: Slide) =>
+    [
+      {
+        label: tr("السعر المحلي", "Local price"),
+        value: Number(slide.localPriceSYP || slide.localPriceUSD || 0)
+          ? formatCurrency(Number(slide.localPriceSYP || 0), "SYP") ||
+            formatCurrency(Number(slide.localPriceUSD || 0), "USD")
+          : null,
+        fallback: slide.localPriceUSD
+          ? formatCurrency(Number(slide.localPriceUSD), "USD")
+          : null,
+      },
+      {
+        label: tr("السعر الدولي", "International price"),
+        value: Number(
+          slide.internationalPriceUSD || slide.internationalPriceSYP || 0,
+        )
+          ? formatCurrency(Number(slide.internationalPriceUSD || 0), "USD") ||
+            formatCurrency(Number(slide.internationalPriceSYP || 0), "SYP")
+          : null,
+        fallback: slide.internationalPriceSYP
+          ? formatCurrency(Number(slide.internationalPriceSYP), "SYP")
+          : null,
+      },
+      {
+        label: "COD",
+        value: Number(slide.codFeeSYP || slide.codFeeUSD || 0)
+          ? `${formatCurrency(Number(slide.codFeeSYP || 0), "SYP")} | ${formatCurrency(Number(slide.codFeeUSD || 0), "USD")}`
+          : null,
+        fallback: null,
+      },
+      {
+        label: tr("السريع", "Express"),
+        value: Number(slide.expressFeeSYP || slide.expressFeeUSD || 0)
+          ? `${formatCurrency(Number(slide.expressFeeSYP || 0), "SYP")} | ${formatCurrency(Number(slide.expressFeeUSD || 0), "USD")}`
+          : null,
+        fallback: null,
+      },
+      {
+        label: tr("التغليف", "Packaging"),
+        value: Number(slide.packagingFeeSYP || slide.packagingFeeUSD || 0)
+          ? `${formatCurrency(Number(slide.packagingFeeSYP || 0), "SYP")} | ${formatCurrency(Number(slide.packagingFeeUSD || 0), "USD")}`
+          : null,
+        fallback: null,
+      },
+      {
+        label: tr("المدة", "Duration"),
+        value: [slide.durationDays, slide.durationHours].some(
+          (part) => Number(part || 0) > 0,
+        )
+          ? [
+              Number(slide.durationDays || 0) > 0
+                ? `${Number(slide.durationDays)} ${tr("يوم", "day")}`
+                : null,
+              Number(slide.durationHours || 0) > 0
+                ? `${Number(slide.durationHours)} ${tr("ساعة", "hour")}`
+                : null,
+            ]
+              .filter(Boolean)
+              .join(" + ")
+          : null,
+        fallback: null,
+      },
+    ].filter((item) => Boolean(item.value || item.fallback));
 
   const getRemainingTime = (endAt?: string) => {
     const endTime = endAt ? new Date(endAt).getTime() : null;
@@ -242,7 +253,13 @@ export default function WelcomePage({
   }
 
   return (
-    <div className={embedded ? "bg-transparent" : "min-h-screen bg-white px-2 py-6 sm:px-3 lg:px-4"}>
+    <div
+      className={
+        embedded
+          ? "bg-transparent"
+          : "min-h-screen bg-white px-2 py-6 sm:px-3 lg:px-4"
+      }
+    >
       <div className={embedded ? "w-full" : "mx-auto max-w-6xl"}>
         <div className={embedded ? "mb-3 text-center" : "mb-5 text-center"}>
           <h1 className="mt-2 text-3xl md:text-5xl font-black text-slate-900">
@@ -346,11 +363,22 @@ export default function WelcomePage({
                 </div>
               );
 
-              if (slide.ctaLink && !/^https?:\/\//i.test(String(slide.ctaLink))) {
-                return <div key={slide._id || `${slide.companyId}-${index}`}>{offerCard}</div>;
+              if (
+                slide.ctaLink &&
+                !/^https?:\/\//i.test(String(slide.ctaLink))
+              ) {
+                return (
+                  <div key={slide._id || `${slide.companyId}-${index}`}>
+                    {offerCard}
+                  </div>
+                );
               }
 
-              return <div key={slide._id || `${slide.companyId}-${index}`}>{offerCard}</div>;
+              return (
+                <div key={slide._id || `${slide.companyId}-${index}`}>
+                  {offerCard}
+                </div>
+              );
             })}
           </div>
         )}
