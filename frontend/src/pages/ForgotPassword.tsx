@@ -126,7 +126,9 @@ export default function ForgotPassword() {
             </div>
           </div>
           {/* <h1 className="text-2xl font-bold text-gray-900">{t("app.name")}</h1> */}
-          <h1 className="text-2xl font-bold text-gray-900">شحنلي</h1>
+          <h1 className="text-2xl font-bold text-gray-900">
+            {language === "ar" ? "شحنلي" : "Shipme"}
+          </h1>
         </div>
 
         <Card className="shadow-xl">
@@ -184,7 +186,9 @@ export default function ForgotPassword() {
                       variant="secondary"
                       className="w-full"
                     >
-                      فتح رابط الرسالة التجريبية
+                      {isRTL
+                        ? "فتح رابط الرسالة التجريبية"
+                        : "Open preview email link"}
                     </Button>
                   )}
                   <Button

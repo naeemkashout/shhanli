@@ -62,7 +62,7 @@ export default function ContactUs() {
               {isArabic ? "البريد الإلكتروني" : "Email"}
             </div>
             <p className="mt-2 text-sm text-gray-700" dir="ltr">
-              support@shhanli.com
+              support@shipme.com
             </p>
           </div>
 

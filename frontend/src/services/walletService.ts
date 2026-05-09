@@ -3,7 +3,31 @@ import api, { handleApiError } from "./api";
 export interface DepositData {
   amount: number;
   currency: string;
-  method: string;
+  provider?: string;
+}
+
+export interface DepositRequestResponse {
+  transactionId: string;
+  paymentId?: string;
+  status?: string;
+  otpRequired?: boolean;
+  customerMSISDN?: string;
+}
+
+export interface DepositConfirmationData {
+  transactionId: string;
+  otp: string;
+}
+
+export interface DepositStatusData {
+  paymentId: string;
+  gatewayStatus: string;
+  transactionStatus: string;
+  isFinal?: boolean;
+  balance?: {
+    USD?: number;
+    SYP?: number;
+  };
 }
 
 export interface WithdrawalRequestData {
@@ -26,6 +50,44 @@ class WalletService {
   async deposit(data: DepositData): Promise<any> {
     try {
       const response = await api.post("/wallet/deposit", data);
+      return response.data;
+    } catch (error) {
+      throw new Error(handleApiError(error));
+    }
+  }
+
+  async confirmDeposit(data: DepositConfirmationData): Promise<any> {
+    try {
+      const response = await api.post("/wallet/deposit/confirm", data);
+      return response.data;
+    } catch (error) {
+      throw new Error(handleApiError(error));
+    }
+  }
+
+  async resendDepositOtp(transactionId: string): Promise<any> {
+    try {
+      const response = await api.post("/wallet/deposit/resend-otp", {
+        transactionId,
+      });
+      return response.data;
+    } catch (error) {
+      throw new Error(handleApiError(error));
+    }
+  }
+
+  async checkDepositStatus(paymentId: string): Promise<DepositStatusData> {
+    try {
+      const response = await api.get(`/wallet/deposit/status/${paymentId}`);
+      return response.data.data;
+    } catch (error) {
+      throw new Error(handleApiError(error));
+    }
+  }
+
+  async cancelDeposit(paymentId: string): Promise<any> {
+    try {
+      const response = await api.post(`/wallet/deposit/cancel/${paymentId}`);
       return response.data;
     } catch (error) {
       throw new Error(handleApiError(error));

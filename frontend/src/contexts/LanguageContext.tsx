@@ -248,7 +248,10 @@ const translations = {
 
     // Status translations
     "status.pending": "معلقة",
+    "status.confirmed": "مؤكدة",
+    "status.picked-up": "تم الاستلام",
     "status.in-transit": "في الطريق",
+    "status.out-for-delivery": "خارج للتوصيل",
     "status.delivered": "تم التسليم",
     "status.cancelled": "ملغية",
     "status.returned": "مرتجعة",
@@ -589,6 +592,11 @@ const translations = {
     "package.enterDescription": "أدخل وصف محتوى الطرد",
     "package.value": "قيمة الطرد",
     "package.fragile": "قابل للكسر",
+    "package.packaging": "التغليف",
+    "package.packagingRequested": "طلب خدمة التغليف",
+    "package.packagingFee": "رسوم التغليف",
+    "package.packagingWillApplyAfterCompany":
+      "ستُطبق بعد اختيار شركة تدعم خدمة التغليف",
     "package.weightCalculation": "احتساب وزن الحمولة",
     "package.actualWeight": "الوزن الفعلي",
     "package.volumetricWeight": "الوزن الحجمي",
@@ -1286,6 +1294,11 @@ const translations = {
     "package.enterDescription": "Enter package content description",
     "package.value": "Package Value",
     "package.fragile": "Fragile",
+    "package.packaging": "Packaging",
+    "package.packagingRequested": "Request Packaging Service",
+    "package.packagingFee": "Packaging Fee",
+    "package.packagingWillApplyAfterCompany":
+      "It will be applied after selecting a company that supports packaging",
     "package.weightCalculation": "Payload Weight Calculation",
     "package.actualWeight": "Actual Weight",
     "package.volumetricWeight": "Volumetric Weight",

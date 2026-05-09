@@ -29,6 +29,7 @@ import {
   Download,
   Truck,
   Clock,
+  Pencil,
   CheckCircle,
   AlertCircle,
   X,
@@ -108,6 +109,13 @@ interface Shipment {
     status?: "pending" | "approved" | "rejected" | null;
     reviewNote?: string;
   };
+  editRequest?: {
+    isRequested?: boolean;
+    reason?: string;
+    requestedChanges?: string;
+    status?: "pending" | "approved" | "rejected" | null;
+    reviewNote?: string;
+  };
   weightAdjustment?: {
     isAdjusted?: boolean;
     originalWeight?: number;
@@ -144,7 +152,10 @@ export default function Shipments() {
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
   const [isPrintDialogOpen, setIsPrintDialogOpen] = useState(false);
   const [isCancelDialogOpen, setIsCancelDialogOpen] = useState(false);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
+  const [editReason, setEditReason] = useState("");
+  const [editRequestedChanges, setEditRequestedChanges] = useState("");
   const [notifiedWeightAdjustments, setNotifiedWeightAdjustments] = useState<
     Set<string>
   >(new Set());
@@ -228,54 +239,67 @@ export default function Shipments() {
 
     socket.on("shipment-weight-adjusted", (payload: any) => {
       if (String(payload?.userId || "") !== userId) return;
+      // ...existing code for weight adjustment event...
+      // ...existing code...
+    });
 
-      if (payload?.wasCancelledForInsufficientBalance) {
-        toast.error(
-          language === "ar"
-            ? `تم إلغاء الشحنة ${payload?.trackingNumber || ""} بسبب عدم كفاية الرصيد بعد تعديل الوزن`
-            : `Shipment ${payload?.trackingNumber || ""} was cancelled due to insufficient balance after weight adjustment`,
-        );
-      } else if (
-        payload?.deductionStatus === "deducted" &&
-        Number(payload?.additionalAmount || 0) > 0
-      ) {
-        toast.info(
-          language === "ar"
-            ? `تم تعديل وزن الشحنة ${payload?.trackingNumber || ""} وخصم ${Number(payload?.additionalAmount || 0).toLocaleString("ar-SY")} ${payload?.currency || ""} من رصيدك`
-            : `Shipment ${payload?.trackingNumber || ""} was weight-adjusted and ${Number(payload?.additionalAmount || 0).toFixed(2)} ${payload?.currency || ""} was deducted from your wallet`,
-        );
-      } else {
-        toast.info(
-          language === "ar"
-            ? `تم تعديل وزن الشحنة ${payload?.trackingNumber || ""}`
-            : `Shipment ${payload?.trackingNumber || ""} weight was adjusted`,
-        );
-      }
+    // استقبال تحديث حالة الشحنة من الشركة أو الإدارة
+    const shipmentUpdateEvent = `shipment-update-${userId}`;
+    socket.on(shipmentUpdateEvent, (payload: any) => {
+      if (!payload?.shipment?._id) return;
+      setShipments((prev) =>
+        prev.map((shipment) =>
+          shipment._id === payload.shipment._id
+            ? { ...shipment, ...payload.shipment, status: payload.status }
+            : shipment,
+        ),
+      );
+      toast.info(
+        language === "ar"
+          ? `تم تحديث حالة الشحنة (${payload.shipment.trackingNumber}) إلى: ${payload.status}`
+          : `Shipment (${payload.shipment.trackingNumber}) status updated to: ${payload.status}`,
+      );
+    });
+
+    socket.on("edit-request-reviewed", (payload: any) => {
+      if (!payload?.shipmentId) return;
+
+      toast.info(
+        payload?.action === "approve"
+          ? language === "ar"
+            ? `تمت الموافقة على طلب تعديل الشحنة ${payload?.trackingNumber || ""}`
+            : `Shipment edit request approved for ${payload?.trackingNumber || ""}`
+          : language === "ar"
+            ? `تم رفض طلب تعديل الشحنة ${payload?.trackingNumber || ""}`
+            : `Shipment edit request rejected for ${payload?.trackingNumber || ""}`,
+      );
 
       setShipments((prev) =>
         prev.map((shipment) =>
-          shipment._id === payload?.shipmentId
+          shipment._id === payload.shipmentId
             ? {
                 ...shipment,
-                status: payload?.wasCancelledForInsufficientBalance
-                  ? "cancelled"
-                  : shipment.status,
-                weightAdjustment: {
-                  ...(shipment.weightAdjustment || {}),
-                  isAdjusted: true,
-                  originalWeight: payload?.originalWeight,
-                  correctedWeight: payload?.correctedWeight,
-                  balanceDeduction: {
-                    ...(shipment.weightAdjustment?.balanceDeduction || {}),
-                    required: Number(payload?.additionalAmount || 0) > 0,
-                    amount: Number(payload?.additionalAmount || 0),
-                    currency: payload?.currency || shipment.cost?.currency,
-                    status: payload?.deductionStatus || "not-required",
-                  },
+                editRequest: {
+                  ...(shipment.editRequest || {}),
+                  status: payload?.status || shipment.editRequest?.status,
+                  reviewNote: payload?.note || shipment.editRequest?.reviewNote,
                 },
               }
             : shipment,
         ),
+      );
+
+      setSelectedShipment((prev) =>
+        prev && prev._id === payload.shipmentId
+          ? {
+              ...prev,
+              editRequest: {
+                ...(prev.editRequest || {}),
+                status: payload?.status || prev.editRequest?.status,
+                reviewNote: payload?.note || prev.editRequest?.reviewNote,
+              },
+            }
+          : prev,
       );
     });
 
@@ -420,6 +444,18 @@ export default function Shipments() {
     return shipment.status === "in-transit";
   };
 
+  const canRequestShipmentEdit = (shipment?: Shipment | null) => {
+    if (!shipment) return false;
+
+    // لا يسمح بطلب التعديل إلا إذا كانت الشحنة معلقة فقط
+    return (
+      shipment.status === "pending" &&
+      shipment.cancellationRequest?.status !== "pending" &&
+      !shipment.editRequest?.isRequested &&
+      !shipment.editRequest?.status
+    );
+  };
+
   // Filter shipments based on search term, status, and date range
   const filteredShipments = shipments.filter((shipment) => {
     const matchesSearch =
@@ -493,6 +529,40 @@ export default function Shipments() {
     setIsCancelDialogOpen(true);
   };
 
+  const handleRequestShipmentEdit = (shipment: Shipment) => {
+    if (shipment.status !== "pending") {
+      toast.error(
+        language === "ar"
+          ? "يمكن طلب تعديل الشحنة فقط عندما تكون بحالة معلقة"
+          : "Shipment edit request is only available for pending shipments",
+      );
+      return;
+    }
+
+    if (shipment.cancellationRequest?.status === "pending") {
+      toast.error(
+        language === "ar"
+          ? "لا يمكن طلب تعديل أثناء وجود طلب إلغاء قيد المراجعة"
+          : "Cannot request edit while cancellation request is pending",
+      );
+      return;
+    }
+
+    if (shipment.editRequest?.isRequested || shipment.editRequest?.status) {
+      toast.error(
+        language === "ar"
+          ? "تم إرسال طلب تعديل لهذه الشحنة مسبقًا"
+          : "An edit request has already been sent for this shipment",
+      );
+      return;
+    }
+
+    setSelectedShipment(shipment);
+    setEditReason("");
+    setEditRequestedChanges("");
+    setIsEditDialogOpen(true);
+  };
+
   const confirmCancelShipment = async () => {
     if (!selectedShipment || !cancelReason.trim()) {
       toast.error(t("shipments.enterCancelReason"));
@@ -538,6 +608,62 @@ export default function Shipments() {
     }
   };
 
+  const confirmEditShipmentRequest = async () => {
+    if (
+      !selectedShipment ||
+      !editReason.trim() ||
+      !editRequestedChanges.trim()
+    ) {
+      toast.error(
+        language === "ar"
+          ? "الرجاء إدخال سبب التعديل والتعديلات المطلوبة"
+          : "Please enter both reason and requested changes",
+      );
+      return;
+    }
+
+    try {
+      await shipmentService.requestShipmentEdit(selectedShipment._id, {
+        reason: editReason.trim(),
+        requestedChanges: editRequestedChanges.trim(),
+      });
+
+      setShipments((prev) =>
+        prev.map((shipment) =>
+          shipment._id === selectedShipment._id
+            ? {
+                ...shipment,
+                editRequest: {
+                  isRequested: true,
+                  reason: editReason.trim(),
+                  requestedChanges: editRequestedChanges.trim(),
+                  status: "pending",
+                },
+              }
+            : shipment,
+        ),
+      );
+
+      toast.success(
+        language === "ar"
+          ? `تم إرسال طلب تعديل للشحنة ${selectedShipment.trackingNumber}`
+          : `Edit request sent for shipment ${selectedShipment.trackingNumber}`,
+      );
+
+      setIsEditDialogOpen(false);
+      setEditReason("");
+      setEditRequestedChanges("");
+      setSelectedShipment(null);
+    } catch (error: any) {
+      toast.error(
+        error?.message ||
+          (language === "ar"
+            ? "حدث خطأ أثناء إرسال طلب التعديل"
+            : "Error submitting shipment edit request"),
+      );
+    }
+  };
+
   const toDataUrl = async (imageUrl: string): Promise<string | null> => {
     try {
       const response = await fetch(imageUrl);
@@ -575,7 +701,7 @@ export default function Shipments() {
     doc.setFontSize(18);
     doc.text("SHIPPING AIR WAYBILL", 14, 15);
     doc.setFontSize(10);
-    doc.text("Shhanli Logistics", 160, 15);
+    doc.text("Shipme Logistics", 160, 15);
 
     doc.setTextColor(0, 0, 0);
     doc.setFontSize(14);
@@ -681,7 +807,7 @@ export default function Shipments() {
     doc.line(14, 274, 196, 274);
     doc.setFontSize(8);
     doc.text(
-      `Generated by Shhanli - ${new Date().toLocaleDateString()}`,
+      `Generated by Shipme - ${new Date().toLocaleDateString()}`,
       105,
       280,
       { align: "center" },
@@ -848,7 +974,7 @@ export default function Shipments() {
           <div class="header">
             <div>
               <h1 class="header-title">SHIPPING AIR WAYBILL</h1>
-              <div class="header-sub">Shhanli Logistics | Global Shipping Form</div>
+              <div class="header-sub">Shipme Logistics | Global Shipping Form</div>
               <div class="tracking">${escapeHtml(shipment.trackingNumber)}</div>
             </div>
             <div style="font-size:12px; text-align:${isRTL ? "left" : "right"}">
@@ -897,7 +1023,7 @@ export default function Shipments() {
           </div>
 
           <div class="footer">
-            Generated by Shhanli - ${escapeHtml(new Date().toLocaleString())}
+            Generated by Shipme - ${escapeHtml(new Date().toLocaleString())}
           </div>
         </div>
       </body>
@@ -1155,7 +1281,9 @@ export default function Shipments() {
                       {language === "ar" ? "إلى:" : "To:"}
                     </span>
                     <span className="text-right">
-                      {shipment.receivers[0]?.name}
+                      {shipment.receivers
+                        .map((r) => r.name)
+                        .join(language === "ar" ? "، " : ", ")}
                     </span>
                   </p>
                   <p className="flex items-center justify-between">
@@ -1250,6 +1378,7 @@ export default function Shipments() {
                           size="sm"
                           onClick={() => handleCancelShipment(shipment)}
                           className="flex-1 h-10 text-red-600 hover:text-red-700 border-red-200 hover:border-red-300"
+                          disabled={shipment.status !== "pending"}
                         >
                           <X className="w-4 h-4 mr-2" />
                           {language === "ar" ? "إلغاء" : "Cancel"}
@@ -1266,6 +1395,17 @@ export default function Shipments() {
                     <p className="font-bold text-sm text-gray-900 text-center leading-tight line-clamp-2">
                       {shipment.shippingCompany.name}
                     </p>
+                    {/* صورة الشحنة */}
+                    {shipment.packageImageUrl && (
+                      <img
+                        src={shipment.packageImageUrl}
+                        alt={
+                          language === "ar" ? "صورة الشحنة" : "Package Image"
+                        }
+                        className="w-16 h-16 rounded-md object-cover border mb-1"
+                        style={{ background: "#f3f4f6" }}
+                      />
+                    )}
                     <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
                       {getCompanyLogoForShipment(shipment) ? (
                         <img
@@ -1284,8 +1424,8 @@ export default function Shipments() {
                     </h3>
                     <p className="text-sm text-gray-600">
                       {language === "ar"
-                        ? `من ${shipment.sender.name} إلى ${shipment.receivers[0]?.name}`
-                        : `From ${shipment.sender.name} to ${shipment.receivers[0]?.name}`}
+                        ? `من ${shipment.sender.name} إلى ${shipment.receivers.map((r) => r.name).join("، ")}`
+                        : `From ${shipment.sender.name} to ${shipment.receivers.map((r) => r.name).join(", ")}`}
                     </p>
                     <div className="flex items-center gap-4 mt-2">
                       <Badge className={getStatusColor(shipment.status)}>
@@ -1313,6 +1453,27 @@ export default function Shipments() {
                           {language === "ar"
                             ? "تمت الموافقة على طلب الإلغاء"
                             : "Cancellation request approved"}
+                        </Badge>
+                      )}
+                      {shipment.editRequest?.status === "pending" && (
+                        <Badge className="bg-sky-100 text-sky-800">
+                          {language === "ar"
+                            ? "طلب تعديل قيد المراجعة"
+                            : "Edit request pending"}
+                        </Badge>
+                      )}
+                      {shipment.editRequest?.status === "rejected" && (
+                        <Badge className="bg-rose-100 text-rose-800">
+                          {language === "ar"
+                            ? "تم رفض طلب التعديل"
+                            : "Edit request rejected"}
+                        </Badge>
+                      )}
+                      {shipment.editRequest?.status === "approved" && (
+                        <Badge className="bg-emerald-100 text-emerald-800">
+                          {language === "ar"
+                            ? "تمت الموافقة على طلب التعديل"
+                            : "Edit request approved"}
                         </Badge>
                       )}
                       {shipment.weightAdjustment?.isAdjusted && (
@@ -1426,6 +1587,17 @@ export default function Shipments() {
                         {language === "ar" ? "إلغاء" : "Cancel"}
                       </Button>
                     )}
+                  {canRequestShipmentEdit(shipment) && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleRequestShipmentEdit(shipment)}
+                      className="text-sky-600 hover:text-sky-700"
+                    >
+                      <Pencil className="w-4 h-4 mr-2" />
+                      {language === "ar" ? "طلب تعديل" : "Edit Request"}
+                    </Button>
+                  )}
                 </div>
               </div>
             </CardContent>
@@ -1513,39 +1685,46 @@ export default function Shipments() {
                   </div>
                 </div>
 
-                {/* Receiver */}
+                {/* Receivers */}
                 <div className="space-y-3">
                   <h4 className="font-semibold text-gray-900 flex items-center gap-2">
                     <User className="w-4 h-4" />
                     {language === "ar"
-                      ? "معلومات المستلم"
-                      : "Receiver Information"}
+                      ? `معلومات المستلمين (${selectedShipment.receivers.length})`
+                      : `Receivers Information (${selectedShipment.receivers.length})`}
                   </h4>
-                  <div className="space-y-2 text-sm">
-                    <p>
-                      <span className="font-medium">
-                        {language === "ar" ? "الاسم:" : "Name:"}
-                      </span>{" "}
-                      {selectedShipment.receivers[0]?.name}
-                    </p>
-                    <p>
-                      <span className="font-medium">
-                        {language === "ar" ? "الهاتف:" : "Phone:"}
-                      </span>{" "}
-                      {selectedShipment.receivers[0]?.phone}
-                    </p>
-                    <p>
-                      <span className="font-medium">
-                        {language === "ar" ? "العنوان:" : "Address:"}
-                      </span>{" "}
-                      {selectedShipment.receivers[0]?.country}
-                    </p>
-                    <p>
-                      <span className="font-medium">
-                        {language === "ar" ? "المدينة:" : "City:"}
-                      </span>{" "}
-                      {selectedShipment.receivers[0]?.city}
-                    </p>
+                  <div className="space-y-4 text-sm">
+                    {selectedShipment.receivers.map((receiver, idx) => (
+                      <div
+                        key={idx}
+                        className="border-b last:border-b-0 pb-2 last:pb-0"
+                      >
+                        <p>
+                          <span className="font-medium">
+                            {language === "ar" ? "الاسم:" : "Name:"}
+                          </span>{" "}
+                          {receiver.name}
+                        </p>
+                        <p>
+                          <span className="font-medium">
+                            {language === "ar" ? "الهاتف:" : "Phone:"}
+                          </span>{" "}
+                          {receiver.phone}
+                        </p>
+                        <p>
+                          <span className="font-medium">
+                            {language === "ar" ? "العنوان:" : "Address:"}
+                          </span>{" "}
+                          {receiver.country}
+                        </p>
+                        <p>
+                          <span className="font-medium">
+                            {language === "ar" ? "المدينة:" : "City:"}
+                          </span>{" "}
+                          {receiver.city}
+                        </p>
+                      </div>
+                    ))}
                   </div>
                 </div>
               </div>
@@ -1684,6 +1863,21 @@ export default function Shipments() {
                   {language === "ar" ? "إلغاء الشحنة" : "Cancel Shipment"}
                 </Button>
               )}
+            {canRequestShipmentEdit(selectedShipment) && (
+              <Button
+                variant="outline"
+                onClick={() =>
+                  selectedShipment &&
+                  handleRequestShipmentEdit(selectedShipment)
+                }
+                className="w-full sm:w-auto"
+              >
+                <Pencil className="w-4 h-4 mr-2" />
+                {language === "ar"
+                  ? "طلب تعديل الشحنة"
+                  : "Request Shipment Edit"}
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -1747,6 +1941,81 @@ export default function Shipments() {
             >
               <X className="w-4 h-4 mr-2" />
               {language === "ar" ? "تأكيد الإلغاء" : "Confirm Cancellation"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Shipment Request Dialog */}
+      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-sky-700">
+              <Pencil className="w-5 h-5" />
+              {language === "ar" ? "طلب تعديل الشحنة" : "Shipment Edit Request"}
+            </DialogTitle>
+            <DialogDescription>
+              {selectedShipment?.trackingNumber} -{" "}
+              {language === "ar"
+                ? "أدخل سبب التعديل والتفاصيل المطلوبة"
+                : "Enter reason and requested changes"}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="editReason">
+                {language === "ar"
+                  ? "سبب طلب التعديل"
+                  : "Reason for edit request"}{" "}
+                <span className="text-red-500">*</span>
+              </Label>
+              <Textarea
+                id="editReason"
+                value={editReason}
+                onChange={(e) => setEditReason(e.target.value)}
+                placeholder={
+                  language === "ar"
+                    ? "مثال: يوجد خطأ في العنوان أو الهاتف"
+                    : "Example: Address or phone number is incorrect"
+                }
+                rows={2}
+                className="mt-2"
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="editRequestedChanges">
+                {language === "ar" ? "التعديلات المطلوبة" : "Requested changes"}{" "}
+                <span className="text-red-500">*</span>
+              </Label>
+              <Textarea
+                id="editRequestedChanges"
+                value={editRequestedChanges}
+                onChange={(e) => setEditRequestedChanges(e.target.value)}
+                placeholder={
+                  language === "ar"
+                    ? "اكتب التعديلات التي تريد تنفيذها على الشحنة"
+                    : "Describe the edits you want to apply to the shipment"
+                }
+                rows={4}
+                className="mt-2"
+              />
+            </div>
+          </div>
+          <DialogFooter className="flex-col sm:flex-row gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setIsEditDialogOpen(false)}
+              className="w-full sm:w-auto"
+            >
+              {language === "ar" ? "إلغاء" : "Cancel"}
+            </Button>
+            <Button
+              onClick={confirmEditShipmentRequest}
+              className="w-full sm:w-auto"
+            >
+              <Pencil className="w-4 h-4 mr-2" />
+              {language === "ar" ? "إرسال طلب التعديل" : "Submit Edit Request"}
             </Button>
           </DialogFooter>
         </DialogContent>

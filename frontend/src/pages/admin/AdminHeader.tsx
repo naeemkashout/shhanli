@@ -9,6 +9,7 @@ import {
   KeyRound,
   LayoutDashboard,
   LogOut,
+  Pencil,
   ScrollText,
   Users,
   Wallet,
@@ -36,10 +37,10 @@ export default function AdminHeader({ children }: AdminLayoutProps) {
       visible: true,
     },
     {
-      name: "الشركات",
+      name: isCompanyAdmin ? "شركتي" : "الشركات",
       href: "/admin/companies",
       icon: Building2,
-      visible: isPlatformAdmin,
+      visible: isPlatformAdmin || isCompanyAdmin,
     },
     {
       name: "المستخدمون",
@@ -57,7 +58,13 @@ export default function AdminHeader({ children }: AdminLayoutProps) {
       name: "طلبات الإلغاء",
       href: "/admin/cancellation-requests",
       icon: Ban,
-      visible: user?.role === "company-admin",
+      visible: true,
+    },
+    {
+      name: "طلبات التعديل",
+      href: "/admin/edit-requests",
+      icon: Pencil,
+      visible: true,
     },
     {
       name: "طلبات سحب الرصيد",

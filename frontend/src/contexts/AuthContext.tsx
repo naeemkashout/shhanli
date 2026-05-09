@@ -62,6 +62,10 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const tr = (ar: string, en: string) =>
+    ((localStorage.getItem("language") as "ar" | "en") || "ar") === "ar"
+      ? ar
+      : en;
 
   useEffect(() => {
     // Check for stored user data and validate token
@@ -106,35 +110,48 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return true;
       }
 
-      throw new Error("فشل تسجيل الدخول");
+      throw new Error(tr("فشل تسجيل الدخول", "Login failed"));
     } catch (error: any) {
       // Handle specific error types with detailed messages
-      let errorMessage = "فشل تسجيل الدخول";
+      let errorMessage = tr("فشل تسجيل الدخول", "Login failed");
 
       if (error.response?.data?.errorType) {
         switch (error.response.data.errorType) {
           case "MISSING_CREDENTIALS":
-            errorMessage = "البريد الإلكتروني وكلمة المرور مطلوبان";
+            errorMessage = tr(
+              "البريد الإلكتروني وكلمة المرور مطلوبان",
+              "Email and password are required",
+            );
             break;
           case "USER_NOT_FOUND":
-            errorMessage =
-              "البريد الإلكتروني غير موجود. يرجى التحقق من البريد الإلكتروني أو التسجيل.";
+            errorMessage = tr(
+              "البريد الإلكتروني غير موجود. يرجى التحقق من البريد الإلكتروني أو التسجيل.",
+              "Email not found. Please verify your email or sign up.",
+            );
             break;
           case "ACCOUNT_DEACTIVATED":
-            errorMessage = "تم إلغاء تنشيط حسابك. يرجى التواصل مع الدعم.";
+            errorMessage = tr(
+              "تم إلغاء تنشيط حسابك. يرجى التواصل مع الدعم.",
+              "Your account is deactivated. Please contact support.",
+            );
             break;
           case "INVALID_PASSWORD":
-            errorMessage = "كلمة المرور غير صحيحة. يرجى المحاولة مرة أخرى.";
+            errorMessage = tr(
+              "كلمة المرور غير صحيحة. يرجى المحاولة مرة أخرى.",
+              "Incorrect password. Please try again.",
+            );
             break;
           default:
             errorMessage =
               error.response.data.message ||
               error.message ||
-              "فشل تسجيل الدخول";
+              tr("فشل تسجيل الدخول", "Login failed");
         }
       } else {
         errorMessage =
-          error.response?.data?.message || error.message || "فشل تسجيل الدخول";
+          error.response?.data?.message ||
+          error.message ||
+          tr("فشل تسجيل الدخول", "Login failed");
       }
 
       throw new Error(errorMessage);
@@ -150,10 +167,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setIsLoading(true);
     try {
       // For now, use regular login (OTP not implemented in backend yet)
-      toast.info("تسجيل الدخول عبر OTP غير متاح حالياً");
+      toast.info(
+        tr(
+          "تسجيل الدخول عبر OTP غير متاح حالياً",
+          "OTP login is currently unavailable",
+        ),
+      );
       return false;
     } catch (error: any) {
-      toast.error(error.message || "فشل تسجيل الدخول");
+      toast.error(error.message || tr("فشل تسجيل الدخول", "Login failed"));
       return false;
     } finally {
       setIsLoading(false);
@@ -170,26 +192,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return true;
       }
 
-      throw new Error("فشل التسجيل");
+      throw new Error(tr("فشل التسجيل", "Registration failed"));
     } catch (error: any) {
       // Handle specific registration errors
-      let errorMessage = "فشل التسجيل";
+      let errorMessage = tr("فشل التسجيل", "Registration failed");
 
       if (error.response?.data?.message) {
         if (error.response.data.message.includes("User already exists")) {
-          errorMessage =
-            "البريد الإلكتروني أو رقم الهاتف موجود مسبقاً. يرجى استخدام بيانات مختلفة.";
+          errorMessage = tr(
+            "البريد الإلكتروني أو رقم الهاتف موجود مسبقاً. يرجى استخدام بيانات مختلفة.",
+            "Email or phone already exists. Please use different details.",
+          );
         } else if (error.response.data.message.includes("email")) {
-          errorMessage = "يرجى إدخال بريد إلكتروني صحيح.";
+          errorMessage = tr(
+            "يرجى إدخال بريد إلكتروني صحيح.",
+            "Please enter a valid email address.",
+          );
         } else if (error.response.data.message.includes("password")) {
-          errorMessage = "كلمة المرور يجب أن تكون على الأقل 6 أحرف.";
+          errorMessage = tr(
+            "كلمة المرور يجب أن تكون على الأقل 6 أحرف.",
+            "Password must be at least 6 characters.",
+          );
         } else if (error.response.data.message.includes("phone")) {
-          errorMessage = "يرجى إدخال رقم هاتف صحيح.";
+          errorMessage = tr(
+            "يرجى إدخال رقم هاتف صحيح.",
+            "Please enter a valid phone number.",
+          );
         } else {
           errorMessage = error.response.data.message;
         }
       } else {
-        errorMessage = error.message || "فشل التسجيل";
+        errorMessage =
+          error.message || tr("فشل التسجيل", "Registration failed");
       }
 
       throw new Error(errorMessage);
@@ -213,9 +247,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return true;
       }
 
-      throw new Error("فشل تغيير كلمة المرور");
+      throw new Error(tr("فشل تغيير كلمة المرور", "Failed to change password"));
     } catch (error: any) {
-      throw new Error(error.message || "فشل تغيير كلمة المرور");
+      throw new Error(
+        error.message || tr("فشل تغيير كلمة المرور", "Failed to change password"),
+      );
     } finally {
       setIsLoading(false);
     }
@@ -235,41 +271,56 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         };
       }
 
-      throw new Error("فشل في إرسال رابط إعادة التعيين");
+      throw new Error(
+        tr("فشل في إرسال رابط إعادة التعيين", "Failed to send reset link"),
+      );
     } catch (error: any) {
       // Handle specific forgot password errors
-      let errorMessage = "فشل في إرسال رابط إعادة التعيين";
+      let errorMessage = tr(
+        "فشل في إرسال رابط إعادة التعيين",
+        "Failed to send reset link",
+      );
 
       if (error.response?.data?.errorType) {
         switch (error.response.data.errorType) {
           case "MISSING_EMAIL":
-            errorMessage = "البريد الإلكتروني مطلوب";
+            errorMessage = tr("البريد الإلكتروني مطلوب", "Email is required");
             break;
           case "USER_NOT_FOUND":
-            errorMessage = "البريد الإلكتروني غير موجود في النظام";
+            errorMessage = tr(
+              "البريد الإلكتروني غير موجود في النظام",
+              "Email does not exist in the system",
+            );
             break;
           case "ACCOUNT_DEACTIVATED":
-            errorMessage = "الحساب معطل. يرجى التواصل مع الدعم";
+            errorMessage = tr(
+              "الحساب معطل. يرجى التواصل مع الدعم",
+              "Account is deactivated. Please contact support",
+            );
             break;
           case "RESET_ALREADY_SENT":
-            errorMessage =
-              "تم إرسال رابط إعادة التعيين بالفعل. يرجى التحقق من بريدك الإلكتروني";
+            errorMessage = tr(
+              "تم إرسال رابط إعادة التعيين بالفعل. يرجى التحقق من بريدك الإلكتروني",
+              "Reset link was already sent. Please check your email",
+            );
             break;
           case "EMAIL_SEND_FAILED":
-            errorMessage =
-              "فشل في إرسال البريد الإلكتروني. يرجى المحاولة مرة أخرى لاحقاً";
+            errorMessage = tr(
+              "فشل في إرسال البريد الإلكتروني. يرجى المحاولة مرة أخرى لاحقاً",
+              "Failed to send email. Please try again later",
+            );
             break;
           default:
             errorMessage =
               error.response.data.message ||
               error.message ||
-              "فشل في إرسال رابط إعادة التعيين";
+              tr("فشل في إرسال رابط إعادة التعيين", "Failed to send reset link");
         }
       } else {
         errorMessage =
           error.response?.data?.message ||
           error.message ||
-          "فشل في إرسال رابط إعادة التعيين";
+          tr("فشل في إرسال رابط إعادة التعيين", "Failed to send reset link");
       }
 
       throw new Error(errorMessage);
@@ -290,34 +341,47 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return true;
       }
 
-      throw new Error("فشل في إعادة تعيين كلمة المرور");
+      throw new Error(
+        tr("فشل في إعادة تعيين كلمة المرور", "Failed to reset password"),
+      );
     } catch (error: any) {
       // Handle specific reset password errors
-      let errorMessage = "فشل في إعادة تعيين كلمة المرور";
+      let errorMessage = tr(
+        "فشل في إعادة تعيين كلمة المرور",
+        "Failed to reset password",
+      );
 
       if (error.response?.data?.errorType) {
         switch (error.response.data.errorType) {
           case "MISSING_DATA":
-            errorMessage = "الرمز المميز وكلمة المرور الجديدة مطلوبان";
+            errorMessage = tr(
+              "الرمز المميز وكلمة المرور الجديدة مطلوبان",
+              "Token and new password are required",
+            );
             break;
           case "INVALID_TOKEN":
-            errorMessage =
-              "الرمز المميز غير صالح أو منتهي الصلاحية. يرجى طلب رابط جديد";
+            errorMessage = tr(
+              "الرمز المميز غير صالح أو منتهي الصلاحية. يرجى طلب رابط جديد",
+              "Token is invalid or expired. Please request a new link",
+            );
             break;
           case "INVALID_PASSWORD":
-            errorMessage = "كلمة المرور يجب أن تكون على الأقل 6 أحرف";
+            errorMessage = tr(
+              "كلمة المرور يجب أن تكون على الأقل 6 أحرف",
+              "Password must be at least 6 characters",
+            );
             break;
           default:
             errorMessage =
               error.response.data.message ||
               error.message ||
-              "فشل في إعادة تعيين كلمة المرور";
+              tr("فشل في إعادة تعيين كلمة المرور", "Failed to reset password");
         }
       } else {
         errorMessage =
           error.response?.data?.message ||
           error.message ||
-          "فشل في إعادة تعيين كلمة المرور";
+          tr("فشل في إعادة تعيين كلمة المرور", "Failed to reset password");
       }
 
       throw new Error(errorMessage);
@@ -330,7 +394,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       await authService.logout();
       setUser(null);
-      toast.success("تم تسجيل الخروج بنجاح");
+      toast.success(tr("تم تسجيل الخروج بنجاح", "Logged out successfully"));
     } catch (error) {
       console.error("Logout error:", error);
       // Clear local state anyway

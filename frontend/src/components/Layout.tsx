@@ -8,7 +8,6 @@ import {
   Package,
   Home,
   Truck,
-  Building2,
   Plus,
   Users,
   CreditCard,
@@ -21,6 +20,8 @@ import {
   X,
   Info,
   MessageCircle,
+  Building2,
+  Calculator,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useLanguage } from "@/contexts/LanguageContext";
@@ -191,6 +192,11 @@ export default function Layout({ children }: LayoutProps) {
       href: "/balance",
       icon: CreditCard,
     },
+    {
+      name: language === "ar" ? "حاسبة الأسعار" : "Price Calculator",
+      href: "/shipping-calculator",
+      icon: Calculator,
+    },
     // {
     //   name: t("nav.notifications"),
     //   href: "/notifications",
@@ -210,11 +216,6 @@ export default function Layout({ children }: LayoutProps) {
           },
         ]
       : []),
-    // {
-    //   name: t("nav.profile"),
-    //   href: "/profile",
-    //   icon: User,
-    // },
   ];
 
   const handleLogout = async () => {
@@ -248,7 +249,7 @@ export default function Layout({ children }: LayoutProps) {
                 <Package className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
               </div>
               <span className="text-lg sm:text-xl font-bold text-gray-900">
-                شحنلي
+                {language === "ar" ? "شحنلي" : "Shipme"}
               </span>
             </div>
 
@@ -256,8 +257,8 @@ export default function Layout({ children }: LayoutProps) {
             <div
               className={`hidden lg:flex items-center ${
                 isRTL
-                  ? "space-x-6 xl:space-x-8 space-x-reverse"
-                  : "space-x-3 xl:space-x-4"
+                  ? "space-x-3 xl:space-x-4 space-x-reverse"
+                  : "space-x-1 xl:space-x-1.5"
               }`}
             >
               {navigationItems.map((item) => {
@@ -268,7 +269,7 @@ export default function Layout({ children }: LayoutProps) {
                   <Link
                     key={item.href}
                     to={item.href}
-                    className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    className={`flex items-center gap-1 px-2 xl:px-2.5 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
                       isActive
                         ? "bg-blue-100 text-blue-700"
                         : "text-gray-600 hover:text-gray-900 hover:bg-gray-100"
@@ -282,7 +283,7 @@ export default function Layout({ children }: LayoutProps) {
             </div>
 
             {/* Right Side */}
-            <div className="flex items-center gap-2 sm:gap-4">
+            <div className="flex items-center gap-1.5 sm:gap-2.5">
               {/* Language Switcher - Show on all screens */}
               <Button
                 variant="ghost"
@@ -317,12 +318,12 @@ export default function Layout({ children }: LayoutProps) {
               {/* User Menu - Show on desktop only */}
               <div className="relative">
                 <div
-                  className="hidden sm:flex items-center gap-3 cursor-pointer"
+                  className="flex items-center gap-3 cursor-pointer"
                   onClick={() => setOpen(!open)}
                 >
                   <div
                     className={`text-${
-                      isRTL ? "left" : "right"
+                      isRTL ? "right" : "left"
                     } hidden md:block`}
                   >
                     <p className="text-sm font-medium text-gray-900">
@@ -331,8 +332,8 @@ export default function Layout({ children }: LayoutProps) {
                     </p>
                   </div>
 
-                  <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center">
-                    <User className="w-4 h-4 text-white" />
+                  <div className="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center">
+                    <User className="w-5 h-5 text-white" />
                   </div>
                 </div>
 
@@ -445,7 +446,7 @@ export default function Layout({ children }: LayoutProps) {
                   </SheetTrigger>
                   <SheetContent
                     side={isRTL ? "right" : "left"}
-                    className="w-[min(320px,85vw)] p-0"
+                    className="w-[min(320px,85vw)] p-0 [&>button]:hidden"
                   >
                     <div className="flex flex-col h-full">
                       <div className="flex items-center justify-between px-4 py-4 sm:py-6 border-b">
@@ -454,8 +455,7 @@ export default function Layout({ children }: LayoutProps) {
                             <Package className="w-5 h-5 text-white" />
                           </div>
                           <span className="text-lg font-bold text-gray-900">
-                            {/* {language === "ar" ? "شحنلي" : "Shahnli"} */}
-                            شحنلي
+                            {language === "ar" ? "شحنلي" : "Shipme"}
                           </span>
                         </div>
                         <Button
@@ -499,6 +499,10 @@ export default function Layout({ children }: LayoutProps) {
                                 key={item.href}
                                 onClick={() => handleNavClick(item.href)}
                                 className={`w-full flex items-center gap-3 px-3 py-3 rounded-lg text-sm font-medium transition-colors min-h-[48px] ${
+                                  isRTL
+                                    ? "justify-start text-left"
+                                    : "flex-row-reverse justify-end text-right"
+                                } ${
                                   isActive
                                     ? "bg-blue-100 text-blue-700"
                                     : "text-gray-600 hover:text-gray-900 hover:bg-gray-100"
@@ -516,18 +520,30 @@ export default function Layout({ children }: LayoutProps) {
                         <Button
                           variant="ghost"
                           onClick={toggleLanguage}
-                          className="w-full justify-start min-h-[48px]"
+                          className={`w-full min-h-[48px] ${
+                            isRTL
+                              ? "justify-start text-left"
+                              : "flex-row-reverse justify-end text-right"
+                          }`}
                         >
-                          <Globe className="w-4 h-4 mr-3" />
+                          <Globe
+                            className={`w-4 h-4 ${isRTL ? "mr-3" : "ml-3"}`}
+                          />
                           {language === "ar" ? "English" : "العربية"}
                         </Button>
 
                         <Button
                           variant="ghost"
                           onClick={handleLogout}
-                          className="w-full justify-start text-red-600 hover:text-red-700 hover:bg-red-50 min-h-[48px]"
+                          className={`w-full text-red-600 hover:text-red-700 hover:bg-red-50 min-h-[48px] ${
+                            isRTL
+                              ? "justify-start text-left"
+                              : "flex-row-reverse justify-end text-right"
+                          }`}
                         >
-                          <LogOut className="w-4 h-4 mr-3" />
+                          <LogOut
+                            className={`w-4 h-4 ${isRTL ? "mr-3" : "ml-3"}`}
+                          />
                           {t("nav.logout")}
                         </Button>
                       </div>
@@ -541,7 +557,7 @@ export default function Layout({ children }: LayoutProps) {
       </div>
 
       {/* Main Content */}
-      <main className="w-full px-2 sm:px-3 lg:px-4 py-4 sm:py-6 lg:py-8">
+      <main className="w-full px-2 sm:px-3 lg:px-4 pt-2 sm:pt-3 lg:pt-4 pb-4 sm:pb-6 lg:pb-8">
         {children}
       </main>
     </div>

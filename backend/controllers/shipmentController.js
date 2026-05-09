@@ -16,12 +16,143 @@ const normalizeLocationValue = (value) => {
     .replace(/أ|إ|آ/g, "ا");
 };
 
+const normalizeCountryCode = (value) =>
+  String(value || "")
+    .trim()
+    .toUpperCase();
+
+const resolveInternationalPerKgRate = (company, countryCode, billingWeight) => {
+  const fallbackRate = Number(company?.pricing?.internationalPerKgUSD || 0);
+  const code = normalizeCountryCode(countryCode);
+
+  if (!code) {
+    return {
+      rate: fallbackRate,
+      zone: "",
+      source: "fallback",
+    };
+  }
+
+  const countryZoneMap = company?.internationalCountryZones;
+  const rawZone =
+    countryZoneMap && typeof countryZoneMap.get === "function"
+      ? countryZoneMap.get(code)
+      : countryZoneMap?.[code];
+
+  const zone = String(rawZone || "")
+    .trim()
+    .toUpperCase();
+
+  if (!zone) {
+    return {
+      rate: fallbackRate,
+      zone: "",
+      source: "fallback",
+    };
+  }
+
+  const normalizedWeight =
+    Number(billingWeight) > 0 ? Number(billingWeight) : 0;
+  const zoneEntries = Array.isArray(company?.internationalZoneRates)
+    ? company.internationalZoneRates
+        .filter(
+          (entry) =>
+            String(entry?.zone || "")
+              .trim()
+              .toUpperCase() === zone,
+        )
+        .map((entry) => ({
+          ...entry,
+          minWeight: Number(entry?.minWeight || 0),
+          maxWeight: Number(entry?.maxWeight || 0),
+          perKgUSD: Number(entry?.perKgUSD || 0),
+        }))
+    : [];
+
+  const zoneRateEntry = zoneEntries
+    .sort((a, b) => {
+      const minDiff = b.minWeight - a.minWeight;
+      if (minDiff !== 0) return minDiff;
+
+      const aMax = a.maxWeight > 0 ? a.maxWeight : Number.POSITIVE_INFINITY;
+      const bMax = b.maxWeight > 0 ? b.maxWeight : Number.POSITIVE_INFINITY;
+      return aMax - bMax;
+    })
+    .find((entry) => {
+      const min = entry.minWeight >= 0 ? entry.minWeight : 0;
+      const max =
+        entry.maxWeight > 0 ? entry.maxWeight : Number.POSITIVE_INFINITY;
+      return normalizedWeight >= min && normalizedWeight <= max;
+    });
+
+  if (!zoneRateEntry) {
+    return {
+      rate: fallbackRate,
+      zone,
+      source: "fallback",
+    };
+  }
+
+  return {
+    rate: Number(zoneRateEntry.perKgUSD || 0),
+    zone,
+    source: "zone",
+  };
+};
+
+const isOfferActive = (offer, now = Date.now()) => {
+  if (!offer?.title || !offer?.isActive) return false;
+
+  const startAt = offer.startAt ? new Date(offer.startAt).getTime() : null;
+  const endAt = offer.endAt ? new Date(offer.endAt).getTime() : null;
+
+  if (startAt && !Number.isNaN(startAt) && startAt > now) return false;
+  if (endAt && !Number.isNaN(endAt) && endAt < now) return false;
+
+  return true;
+};
+
+const resolveShipmentOffer = (company, offerId) => {
+  const offers = Array.isArray(company?.offers) ? company.offers : [];
+  const activeOffers = offers
+    .filter((offer) => isOfferActive(offer))
+    .sort(
+      (left, right) =>
+        Number(right?.priority || 0) - Number(left?.priority || 0),
+    );
+
+  if (!activeOffers.length) return null;
+  if (!offerId) return activeOffers[0];
+
+  return (
+    activeOffers.find(
+      (offer) => String(offer?._id || "") === String(offerId || ""),
+    ) || activeOffers[0]
+  );
+};
+
 // @desc    Create new shipment
 // @route   POST /api/shipments
 // @access  Private
 exports.createShipment = async (req, res) => {
   try {
-    const selectedCompanyId = req.body?.shippingCompany?.id;
+    // دعم استقبال FormData: إذا كان هناك ملف packageImage، استخرج البيانات من req.body.data
+    let body = req.body;
+    let packageImageInfo = null;
+    if (req.file && req.file.fieldname === "packageImage") {
+      // إذا أتى body كـ JSON string (لأننا أرسلناه في حقل data)
+      if (typeof req.body.data === "string") {
+        body = JSON.parse(req.body.data);
+      }
+      packageImageInfo = {
+        filename: req.file.filename,
+        originalName: req.file.originalname,
+        path: req.file.path,
+        size: req.file.size,
+        uploadedAt: new Date(),
+      };
+    }
+    const selectedCompanyId = body?.shippingCompany?.id;
     if (
       !selectedCompanyId ||
       !mongoose.Types.ObjectId.isValid(selectedCompanyId)
@@ -33,13 +164,22 @@ exports.createShipment = async (req, res) => {
     }
 
     const shippingCompany = await ShippingCompany.findById(selectedCompanyId);
-    const paymentMethod = req.body?.cost?.paymentMethod;
-    const shippingType = req.body?.shippingType;
+    const paymentMethod = body?.cost?.paymentMethod;
+    const shippingType = body?.shippingType;
+    const shippingMode = body?.shippingMode || "standard";
+    const packagingRequested = Boolean(body?.package?.packagingRequested);
 
     if (!shippingType || !["local", "international"].includes(shippingType)) {
       return res.status(400).json({
         success: false,
         message: "Invalid shipping type",
+      });
+    }
+
+    if (!["standard", "express"].includes(shippingMode)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid shipping mode",
       });
     }
 
@@ -81,9 +221,48 @@ exports.createShipment = async (req, res) => {
       });
     }
 
-    const receivers = Array.isArray(req.body?.receivers)
-      ? req.body.receivers
-      : [];
+    if (
+      shippingMode === "express" &&
+      !shippingCompany.expressService?.enabled
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Selected company does not support express shipping",
+      });
+    }
+
+    if (packagingRequested && !shippingCompany.packagingService?.enabled) {
+      return res.status(400).json({
+        success: false,
+        message: "Selected company does not support packaging service",
+      });
+    }
+
+    const receivers = Array.isArray(body?.receivers) ? body.receivers : [];
+
+    if (shippingType === "international") {
+      const normalizedSenderCountry = normalizeLocationValue(
+        req.body?.sender?.country,
+      );
+      const sameCountryReceiver = receivers.find((receiver) => {
+        const normalizedReceiverCountry = normalizeLocationValue(
+          receiver?.country,
+        );
+        return (
+          normalizedSenderCountry &&
+          normalizedReceiverCountry &&
+          normalizedSenderCountry === normalizedReceiverCountry
+        );
+      });
+
+      if (sameCountryReceiver?.country) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "For international shipping, sender country cannot be the same as receiver country",
+        });
+      }
+    }
 
     if (
       shippingType === "local" &&
@@ -131,10 +310,10 @@ exports.createShipment = async (req, res) => {
       }
     }
 
-    const actualWeight = Number(req.body?.package?.weight) || 0;
-    const length = Number(req.body?.package?.length) || 0;
-    const width = Number(req.body?.package?.width) || 0;
-    const height = Number(req.body?.package?.height) || 0;
+    const actualWeight = Number(body?.package?.weight) || 0;
+    const length = Number(body?.package?.length) || 0;
+    const width = Number(body?.package?.width) || 0;
+    const height = Number(body?.package?.height) || 0;
     const volumetricDivisor =
       Number(shippingCompany.volumetricDivisor) > 0
         ? Number(shippingCompany.volumetricDivisor)
@@ -144,21 +323,61 @@ exports.createShipment = async (req, res) => {
         ? (length * width * height) / volumetricDivisor
         : 0;
     const billingWeight = Math.max(actualWeight, volumetricWeight);
+    const firstReceiverCountry = receivers[0]?.country;
+    const internationalRate = resolveInternationalPerKgRate(
+      shippingCompany,
+      firstReceiverCountry,
+      billingWeight,
+    );
     const pricePerKg =
       shippingType === "international"
-        ? Number(shippingCompany.pricing?.internationalPerKgUSD || 0)
+        ? internationalRate.rate
         : Number(shippingCompany.pricing?.localPerKgSYP || 0);
 
-    const baseAmount = billingWeight * pricePerKg;
+    const selectedOffer = resolveShipmentOffer(shippingCompany, body?.offerId);
+
+    const baseAmount = selectedOffer
+      ? Number(
+          shippingType === "international"
+            ? (selectedOffer.internationalPriceUSD ??
+                selectedOffer.internationalPrice ??
+                0)
+            : (selectedOffer.localPriceSYP ?? selectedOffer.localPrice ?? 0),
+        )
+      : billingWeight * pricePerKg;
     const codFee =
       paymentMethod === "cod"
         ? Number(
-            shippingType === "international"
-              ? shippingCompany.codService?.internationalFeeUSD || 0
-              : shippingCompany.codService?.localFeeSYP || 0,
+            selectedOffer
+              ? shippingType === "international"
+                ? selectedOffer.codFeeUSD || 0
+                : (selectedOffer.codFeeSYP ?? selectedOffer.codFee ?? 0)
+              : shippingType === "international"
+                ? shippingCompany.codService?.internationalFeeUSD || 0
+                : shippingCompany.codService?.localFeeSYP || 0,
           )
         : 0;
-    const totalAmount = baseAmount + codFee;
+    const expressFee =
+      shippingMode === "express"
+        ? Number(
+            selectedOffer
+              ? shippingType === "international"
+                ? selectedOffer.expressFeeUSD || 0
+                : selectedOffer.expressFeeSYP || 0
+              : shippingType === "international"
+                ? shippingCompany.expressService?.internationalFeeUSD || 0
+                : shippingCompany.expressService?.localFeeSYP || 0,
+          )
+        : 0;
+    const packagingFee =
+      packagingRequested && shippingCompany.packagingService?.enabled
+        ? Number(
+            shippingType === "international"
+              ? shippingCompany.packagingService?.internationalFeeUSD || 0
+              : shippingCompany.packagingService?.localFeeSYP || 0,
+          )
+        : 0;
+    const totalAmount = baseAmount + codFee + expressFee + packagingFee;
     const costCurrency = shippingType === "international" ? "USD" : "SYP";
 
     const currentUser = await User.findById(req.user.id);
@@ -170,25 +389,36 @@ exports.createShipment = async (req, res) => {
     }
 
     const shipmentData = {
-      ...req.body,
+      ...body,
       userId: req.user.id,
+      shippingMode,
       shippingCompany: {
         id: shippingCompany._id.toString(),
         name: shippingCompany.name,
         trackingUrlTemplate: shippingCompany.trackingUrlTemplate || "",
       },
       cost: {
-        ...req.body.cost,
+        ...body.cost,
         amount: totalAmount,
         baseAmount,
         codFee,
+        expressFee,
+        packagingFee,
         currency: costCurrency,
         paymentMethod,
+        zone: shippingType === "international" ? internationalRate.zone : "",
+        zoneRateSource:
+          shippingType === "international" ? internationalRate.source : "",
         volumetricDivisor,
         volumetricWeight,
         actualWeight,
         billingWeight,
       },
+      package: {
+        ...body.package,
+        packagingRequested,
+      },
+      documents: packageImageInfo ? [packageImageInfo] : [],
     };
 
     const shipment = await Shipment.create(shipmentData);
@@ -552,6 +782,172 @@ exports.cancelShipment = async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Error cancelling shipment",
+      error: error.message,
+    });
+  }
+};
+
+// @desc    Request shipment edit
+// @route   PUT /api/shipments/:id/edit-request
+// @access  Private
+exports.requestShipmentEdit = async (req, res) => {
+  try {
+    const { reason, requestedChanges } = req.body || {};
+    const normalizedReason = String(reason || "").trim();
+    const normalizedRequestedChanges = String(requestedChanges || "").trim();
+
+    if (!normalizedReason) {
+      return res.status(400).json({
+        success: false,
+        message: "Edit request reason is required",
+      });
+    }
+
+    if (!normalizedRequestedChanges) {
+      return res.status(400).json({
+        success: false,
+        message: "Requested changes details are required",
+      });
+    }
+
+    const shipment = await Shipment.findById(req.params.id);
+
+    if (!shipment) {
+      return res.status(404).json({
+        success: false,
+        message: "Shipment not found",
+      });
+    }
+
+    if (shipment.userId.toString() !== req.user.id) {
+      return res.status(403).json({
+        success: false,
+        message: "Not authorized to edit this shipment",
+      });
+    }
+
+    if (shipment.status !== "pending") {
+      return res.status(400).json({
+        success: false,
+        message: "Only pending shipments can be edited",
+      });
+    }
+
+    if (shipment.cancellationRequest?.status === "pending") {
+      return res.status(400).json({
+        success: false,
+        message: "Cannot request edit while cancellation request is pending",
+      });
+    }
+
+    if (shipment.editRequest?.status === "pending") {
+      return res.status(400).json({
+        success: false,
+        message: "Edit request already submitted",
+      });
+    }
+
+    shipment.editRequest = {
+      isRequested: true,
+      reason: normalizedReason,
+      requestedChanges: normalizedRequestedChanges,
+      status: "pending",
+      requestedBy: req.user.id,
+      requestedAt: new Date(),
+      reviewedBy: null,
+      reviewedAt: null,
+      reviewNote: "",
+    };
+
+    shipment.statusHistory.push({
+      status: shipment.status,
+      note: `Shipment edit requested by user: ${normalizedRequestedChanges}`,
+      updatedBy: req.user.id,
+      timestamp: new Date(),
+    });
+
+    await shipment.save();
+
+    try {
+      await ActivityLog.create({
+        userId: req.user.id,
+        action: "edit-shipment-request",
+        category: "shipment",
+        description: `Requested shipment edit for ${shipment.trackingNumber}`,
+        targetId: shipment._id,
+        targetModel: "Shipment",
+        metadata: {
+          reason: normalizedReason,
+          requestedChanges: normalizedRequestedChanges,
+        },
+      });
+    } catch (activityLogError) {
+      console.error(
+        "requestShipmentEdit activity log error:",
+        activityLogError,
+      );
+    }
+
+    const io = req.app.get("io");
+    if (io && shipment.shippingCompany?.id) {
+      io.to(`company-room-${shipment.shippingCompany.id}`).emit(
+        "edit-request-created",
+        {
+          shipmentId: shipment._id,
+          trackingNumber: shipment.trackingNumber,
+          companyId: shipment.shippingCompany.id,
+          companyName: shipment.shippingCompany.name,
+          requestedBy: req.user.id,
+          reason: shipment.editRequest?.reason || "",
+          requestedChanges: shipment.editRequest?.requestedChanges || "",
+          requestedAt: shipment.editRequest?.requestedAt || new Date(),
+        },
+      );
+
+      io.to("admin-room").emit("edit-request-created", {
+        shipmentId: shipment._id,
+        trackingNumber: shipment.trackingNumber,
+        companyId: shipment.shippingCompany.id,
+        companyName: shipment.shippingCompany.name,
+        requestedBy: req.user.id,
+        reason: shipment.editRequest?.reason || "",
+        requestedChanges: shipment.editRequest?.requestedChanges || "",
+        requestedAt: shipment.editRequest?.requestedAt || new Date(),
+      });
+    }
+
+    try {
+      await createAndEmitNotification(req, {
+        userId: shipment.userId,
+        type: "shipment",
+        titleAr: "تم إرسال طلب تعديل الشحنة",
+        titleEn: "Shipment Edit Request Submitted",
+        messageAr: `تم إرسال طلب تعديل الشحنة ${shipment.trackingNumber} وهو الآن قيد المراجعة.`,
+        messageEn: `Your shipment edit request for ${shipment.trackingNumber} was submitted and is now under review.`,
+        metadata: {
+          shipmentId: shipment._id,
+          trackingNumber: shipment.trackingNumber,
+          requestType: "edit",
+          requestStatus: "pending",
+        },
+      });
+    } catch (notificationError) {
+      console.error(
+        "requestShipmentEdit notification error:",
+        notificationError,
+      );
+    }
+
+    res.json({
+      success: true,
+      message: "Shipment edit request submitted successfully",
+      data: shipment,
+    });
+  } catch (error) {
+    console.error("requestShipmentEdit error:", error);
+    res.status(500).json({
+      success: false,
+      message: `Error requesting shipment edit: ${error.message}`,
       error: error.message,
     });
   }

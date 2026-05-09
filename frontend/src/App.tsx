@@ -26,6 +26,8 @@ import Companies from "@/pages/Companies";
 import CompanyDetails from "@/pages/CompanyDetails";
 import AboutUs from "@/pages/AboutUs";
 import ContactUs from "@/pages/ContactUs";
+import ShippingCalculator from "@/pages/ShippingCalculator";
+import OffersPage from "@/pages/Index";
 import AdminHeader from "@/pages/admin/AdminHeader";
 import AdminDashboard from "@/pages/admin/AdminDashboard";
 import UsersManagement from "@/pages/admin/UsersManagement";
@@ -35,6 +37,7 @@ import ActivityLogs from "@/pages/admin/ActivityLogs";
 import CompaniesManagement from "@/pages/admin/CompaniesManagement";
 import AdminChangePassword from "@/pages/admin/AdminChangePassword";
 import CancellationRequests from "@/pages/admin/CancellationRequests";
+import EditRequests from "@/pages/admin/EditRequests";
 import WithdrawalRequests from "@/pages/admin/WithdrawalRequests";
 import ComparisonInvoices from "@/pages/admin/ComparisonInvoices";
 import RevenueAnalytics from "@/pages/admin/RevenueAnalytics";
@@ -107,11 +110,9 @@ function App() {
               <Route
                 path="/create-shipment"
                 element={
-                  <UserSiteRoute>
-                    <Layout>
-                      <CreateShipment />
-                    </Layout>
-                  </UserSiteRoute>
+                  <Layout>
+                    <CreateShipment />
+                  </Layout>
                 }
               />
               <Route
@@ -215,6 +216,26 @@ function App() {
                 }
               />
               <Route
+                path="/shipping-calculator"
+                element={
+                  <UserSiteRoute>
+                    <Layout>
+                      <ShippingCalculator />
+                    </Layout>
+                  </UserSiteRoute>
+                }
+              />
+              <Route
+                path="/offers"
+                element={
+                  <UserSiteRoute>
+                    <Layout>
+                      <OffersPage />
+                    </Layout>
+                  </UserSiteRoute>
+                }
+              />
+              <Route
                 path="/admin"
                 element={
                   <ProtectedRoute
@@ -263,9 +284,23 @@ function App() {
               <Route
                 path="/admin/cancellation-requests"
                 element={
-                  <ProtectedRoute allowedRoles={["company-admin"]}>
+                  <ProtectedRoute
+                    allowedRoles={["admin", "super-admin", "company-admin"]}
+                  >
                     <AdminHeader>
                       <CancellationRequests />
+                    </AdminHeader>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/admin/edit-requests"
+                element={
+                  <ProtectedRoute
+                    allowedRoles={["admin", "super-admin", "company-admin"]}
+                  >
+                    <AdminHeader>
+                      <EditRequests />
                     </AdminHeader>
                   </ProtectedRoute>
                 }

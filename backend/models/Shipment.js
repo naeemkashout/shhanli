@@ -19,6 +19,12 @@ const shipmentSchema = new mongoose.Schema(
       required: true,
       default: "local",
     },
+    shippingMode: {
+      type: String,
+      enum: ["standard", "express"],
+      required: true,
+      default: "standard",
+    },
     sender: {
       name: { type: String, required: true },
       phone: { type: String, required: true },
@@ -78,6 +84,7 @@ const shipmentSchema = new mongoose.Schema(
       value: { type: Number, required: true },
       currency: { type: String, enum: ["USD", "SYP"], required: true },
       fragile: { type: Boolean, default: false },
+      packagingRequested: { type: Boolean, default: false },
     },
     shippingCompany: {
       id: { type: String, required: true },
@@ -88,11 +95,19 @@ const shipmentSchema = new mongoose.Schema(
       amount: { type: Number, required: true },
       baseAmount: { type: Number, default: 0 },
       codFee: { type: Number, default: 0 },
+      expressFee: { type: Number, default: 0 },
+      packagingFee: { type: Number, default: 0 },
       currency: { type: String, enum: ["USD", "SYP"], required: true },
       paymentMethod: {
         type: String,
         enum: ["wallet", "cod"],
         required: true,
+      },
+      zone: { type: String, default: "" },
+      zoneRateSource: {
+        type: String,
+        enum: ["zone", "fallback", ""],
+        default: "",
       },
       isPaid: { type: Boolean, default: false },
       volumetricWeight: { type: Number },
@@ -129,6 +144,43 @@ const shipmentSchema = new mongoose.Schema(
         default: false,
       },
       reason: {
+        type: String,
+        default: "",
+      },
+      status: {
+        type: String,
+        enum: ["pending", "approved", "rejected"],
+        default: null,
+      },
+      requestedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+      },
+      requestedAt: {
+        type: Date,
+      },
+      reviewedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+      },
+      reviewedAt: {
+        type: Date,
+      },
+      reviewNote: {
+        type: String,
+        default: "",
+      },
+    },
+    editRequest: {
+      isRequested: {
+        type: Boolean,
+        default: false,
+      },
+      reason: {
+        type: String,
+        default: "",
+      },
+      requestedChanges: {
         type: String,
         default: "",
       },

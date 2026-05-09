@@ -16,6 +16,7 @@
 ## التقنيات المستخدمة
 
 ### Backend
+
 - Node.js + Express
 - MongoDB + Mongoose
 - JWT Authentication
@@ -23,6 +24,7 @@
 - Nodemailer (Email service)
 
 ### Frontend
+
 - React 18 + TypeScript
 - Vite
 - Tailwind CSS + shadcn-ui
@@ -41,6 +43,7 @@
 ### 1. تثبيت MongoDB
 
 #### Windows:
+
 ```bash
 # تحميل وتثبيت MongoDB Community Server من:
 # https://www.mongodb.com/try/download/community
@@ -50,6 +53,7 @@ mongod
 ```
 
 #### macOS:
+
 ```bash
 brew tap mongodb/brew
 brew install mongodb-community
@@ -57,6 +61,7 @@ brew services start mongodb-community
 ```
 
 #### Linux:
+
 ```bash
 # Ubuntu/Debian
 sudo apt-get install mongodb
@@ -111,7 +116,7 @@ Frontend سيعمل على: `http://localhost:5173`
 ## البنية الأساسية
 
 ```
-shhanli/
+shipme/
 ├── backend/
 │   ├── config/          # إعدادات قاعدة البيانات والبريد
 │   ├── controllers/     # معالجات الطلبات
@@ -137,6 +142,7 @@ shhanli/
 ## API Endpoints
 
 ### Authentication
+
 - `POST /api/auth/register` - تسجيل مستخدم جديد
 - `POST /api/auth/login` - تسجيل الدخول
 - `POST /api/auth/logout` - تسجيل الخروج
@@ -145,6 +151,7 @@ shhanli/
 - `GET /api/auth/me` - الحصول على بيانات المستخدم الحالي
 
 ### Shipments
+
 - `POST /api/shipments` - إنشاء شحنة جديدة
 - `GET /api/shipments` - الحصول على شحنات المستخدم
 - `GET /api/shipments/:id` - الحصول على تفاصيل شحنة
@@ -152,10 +159,12 @@ shhanli/
 - `PUT /api/shipments/:id/cancel` - إلغاء شحنة
 
 ### Wallet
+
 - `POST /api/wallet/charge` - شحن المحفظة
 - `GET /api/wallet/transactions` - سجل المعاملات
 
 ### Contacts
+
 - `POST /api/contacts` - إضافة جهة اتصال
 - `GET /api/contacts` - الحصول على جهات الاتصال
 - `PUT /api/contacts/:id` - تحديث جهة اتصال
@@ -164,12 +173,14 @@ shhanli/
 ## حسابات الاختبار
 
 ### حساب مستخدم عادي:
+
 ```
 Email: user@test.com
 Password: User@123456
 ```
 
 ### حساب إداري:
+
 ```
 Email: admin@kashout.com
 Password: Admin@123456
@@ -178,6 +189,7 @@ Password: Admin@123456
 ## الإعدادات المهمة
 
 ### Backend (.env)
+
 ```env
 PORT=5000
 MONGODB_URI=mongodb://localhost:27017/kashout
@@ -186,6 +198,7 @@ CORS_ORIGIN=http://localhost:5173
 ```
 
 ### Frontend (.env)
+
 ```env
 VITE_API_URL=http://localhost:5000/api
 ```
@@ -193,6 +206,7 @@ VITE_API_URL=http://localhost:5000/api
 ## حل المشاكل الشائعة
 
 ### 1. خطأ في الاتصال بقاعدة البيانات
+
 ```bash
 # تأكد من تشغيل MongoDB
 mongod
@@ -202,12 +216,15 @@ brew services start mongodb-community
 ```
 
 ### 2. خطأ CORS
+
 تأكد من أن `CORS_ORIGIN` في Backend يطابق عنوان Frontend:
+
 ```env
 CORS_ORIGIN=http://localhost:5173
 ```
 
 ### 3. خطأ في تثبيت المكتبات
+
 ```bash
 # حذف node_modules وإعادة التثبيت
 rm -rf node_modules package-lock.json
@@ -215,7 +232,9 @@ npm install
 ```
 
 ### 4. خطأ في الاتصال بـ API
+
 تأكد من:
+
 - Backend يعمل على المنفذ 5000
 - Frontend يستخدم العنوان الصحيح في `.env`
 - لا يوجد Firewall يمنع الاتصال
@@ -223,6 +242,7 @@ npm install
 ## المساهمة
 
 للمساهمة في المشروع:
+
 1. Fork المشروع
 2. إنشاء فرع جديد (`git checkout -b feature/amazing-feature`)
 3. Commit التغييرات (`git commit -m 'Add amazing feature'`)
@@ -236,8 +256,9 @@ npm install
 ## الدعم
 
 للدعم والاستفسارات:
+
 - Email: support@kashout.com
-- GitHub Issues: [Create an issue](https://github.com/naeemkashout/shhanli/issues)
+- GitHub Issues: [Create an issue](https://github.com/naeemkashout/shipme/issues)
 
 ## ملاحظات مهمة
 

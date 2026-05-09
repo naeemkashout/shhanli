@@ -29,7 +29,6 @@ import {
   AlertCircle,
   Plus,
   Minus,
-  CreditCard,
   Banknote,
   Smartphone,
   Eye,
@@ -42,11 +41,7 @@ import walletService from "@/services/walletService";
 import { io, Socket } from "socket.io-client";
 
 type Currency = "SYP" | "USD";
-
-const SHAM_CASH_ACCOUNT_ID = "a44d9767cf5d5125af08af0e57511d0c";
-const SHAM_CASH_QR_URL = `https://api.qrserver.com/v1/create-qr-code/?size=512x512&data=${encodeURIComponent(
-  SHAM_CASH_ACCOUNT_ID,
-)}`;
+type DepositProvider = "syriatel-cash" | "paymera";
 
 export default function Balance() {
   const { t, isRTL, language } = useLanguage();
@@ -55,11 +50,20 @@ export default function Balance() {
   const [balanceUSD, setBalanceUSD] = useState(0);
   const [depositAmount, setDepositAmount] = useState("");
   const [withdrawAmount, setWithdrawAmount] = useState("");
-  const [depositMethod, setDepositMethod] = useState("");
   const [withdrawMethod, setWithdrawMethod] = useState("");
   const [depositCurrency, setDepositCurrency] = useState<Currency>("SYP");
   const [withdrawCurrency, setWithdrawCurrency] = useState<Currency>("SYP");
   const [withdrawNotes, setWithdrawNotes] = useState("");
+  const [activePaymentId, setActivePaymentId] = useState("");
+  const [activeDepositProvider, setActiveDepositProvider] =
+    useState<DepositProvider>("paymera");
+  const [depositProvider, setDepositProvider] =
+    useState<DepositProvider>("paymera");
+  const [depositOtp, setDepositOtp] = useState("");
+  const [depositStatusText, setDepositStatusText] = useState("");
+  const [isCheckingDeposit, setIsCheckingDeposit] = useState(false);
+  const [isSubmittingDeposit, setIsSubmittingDeposit] = useState(false);
+  const [isResendingDepositOtp, setIsResendingDepositOtp] = useState(false);
   const [isDepositDialogOpen, setIsDepositDialogOpen] = useState(false);
   const [isWithdrawDialogOpen, setIsWithdrawDialogOpen] = useState(false);
   const [showBalanceUsd, setShowBalanceUsd] = useState(true);
@@ -108,20 +112,6 @@ export default function Balance() {
     }
   };
 
-  const depositMethods = [
-    { value: "card", label: t("creditCard"), icon: CreditCard },
-    {
-      value: "bank-transfer",
-      label: t("balance.bankTransfer"),
-      icon: Banknote,
-    },
-    {
-      value: "mobile-payment",
-      label: t("balance.shamCash"),
-      icon: Smartphone,
-    },
-  ];
-
   const withdrawMethods = [
     {
       value: "bank-transfer",
@@ -169,6 +159,69 @@ export default function Balance() {
     return currency === "SYP" ? balanceSYP : balanceUSD;
   };
 
+  const resetDepositFlow = () => {
+    setDepositAmount("");
+    setActivePaymentId("");
+    setActiveDepositProvider("paymera");
+    setDepositOtp("");
+    setDepositStatusText("");
+  };
+
+  const checkActiveDepositStatus = async () => {
+    if (!activePaymentId) return;
+
+    try {
+      setIsCheckingDeposit(true);
+      const statusData =
+        await walletService.checkDepositStatus(activePaymentId);
+      const gatewayStatus = String(statusData?.gatewayStatus || "pending");
+      setDepositStatusText(gatewayStatus);
+
+      if (statusData?.transactionStatus === "completed") {
+        await loadBalanceData();
+        toast.success(
+          language === "ar"
+            ? "تم تأكيد الإيداع وإضافة الرصيد"
+            : "Deposit confirmed and wallet updated",
+        );
+        resetDepositFlow();
+        setIsDepositDialogOpen(false);
+        return;
+      }
+
+      if (
+        statusData?.transactionStatus === "failed" ||
+        statusData?.transactionStatus === "cancelled"
+      ) {
+        toast.error(
+          language === "ar"
+            ? "لم تكتمل عملية الإيداع"
+            : "Deposit was not completed",
+        );
+        resetDepositFlow();
+      }
+    } catch (error: any) {
+      toast.error(
+        error.message ||
+          (language === "ar"
+            ? "تعذر التحقق من حالة الدفع"
+            : "Failed to verify payment status"),
+      );
+    } finally {
+      setIsCheckingDeposit(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!isDepositDialogOpen || !activePaymentId) return;
+
+    const timer = setInterval(() => {
+      checkActiveDepositStatus();
+    }, 5000);
+
+    return () => clearInterval(timer);
+  }, [isDepositDialogOpen, activePaymentId]);
+
   const handleDeposit = async () => {
     const amount = parseFloat(depositAmount);
     const minAmount = getMinDepositAmount(depositCurrency);
@@ -176,10 +229,6 @@ export default function Balance() {
 
     if (!amount || amount <= 0) {
       toast.error(t("pleaseEnterValidAmount"));
-      return;
-    }
-    if (!depositMethod) {
-      toast.error(t("pleaseSelectPaymentMethod"));
       return;
     }
     if (amount < minAmount) {
@@ -202,18 +251,132 @@ export default function Balance() {
     }
 
     try {
-      await walletService.deposit({
+      setIsSubmittingDeposit(true);
+      const response = await walletService.deposit({
         amount,
         currency: depositCurrency,
-        method: depositMethod,
+        provider: depositProvider,
       });
+
+      const transactionId = String(
+        response?.data?.transactionId || response?.data?.paymentId || "",
+      );
+      const paymentUrl = String(response?.data?.paymentUrl || "");
+      const createdProvider = String(
+        response?.data?.provider || depositProvider,
+      );
+
+      if (!transactionId) {
+        toast.error(
+          language === "ar"
+            ? "تعذر إنشاء طلب الإيداع"
+            : "Failed to create deposit request",
+        );
+        return;
+      }
+
+      setActivePaymentId(transactionId);
+      setActiveDepositProvider(createdProvider as DepositProvider);
+
+      if (createdProvider === "paymera" && paymentUrl) {
+        setDepositStatusText(language === "ar" ? "بانتظار الدفع" : "pending");
+        toast.success(
+          language === "ar"
+            ? "تم فتح بوابة Paymera. أكمل الدفع ثم تحقق من الحالة."
+            : "Paymera gateway opened. Complete payment then check status.",
+        );
+        window.location.assign(paymentUrl);
+        return;
+      }
+
+      setDepositStatusText(
+        language === "ar" ? "تم إرسال رمز التحقق" : "OTP sent",
+      );
+
+      toast.success(
+        language === "ar"
+          ? "تم إرسال الطلب . أدخل الرمز الذي يصلك ثم أكد العملية."
+          : "request sent. Enter the OTP you received and confirm.",
+      );
+    } catch (error: any) {
+      toast.error(error.message || t("balance.chargeError"));
+    } finally {
+      setIsSubmittingDeposit(false);
+    }
+  };
+
+  const handleConfirmDeposit = async () => {
+    if (activeDepositProvider !== "syriatel-cash") {
+      toast.error(
+        language === "ar"
+          ? "التأكيد بالرمز متاح فقط لسيرياتيل كاش"
+          : "OTP confirmation is only available for Syriatel Cash",
+      );
+      return;
+    }
+
+    if (!activePaymentId) {
+      toast.error(
+        language === "ar"
+          ? "لا يوجد طلب إيداع نشط"
+          : "No active deposit request",
+      );
+      return;
+    }
+
+    const otp = depositOtp.trim();
+    if (!otp) {
+      toast.error(
+        language === "ar" ? "أدخل رمز التحقق أولاً" : "Enter the OTP first",
+      );
+      return;
+    }
+
+    try {
+      setIsSubmittingDeposit(true);
+      const response = await walletService.confirmDeposit({
+        transactionId: activePaymentId,
+        otp,
+      });
+
+      if (response?.success === false) {
+        throw new Error(response?.message || t("balance.chargeError"));
+      }
+
       await loadBalanceData();
-      toast.success(t("depositRequestSubmitted"));
-      setDepositAmount("");
-      setDepositMethod("");
+      toast.success(
+        language === "ar"
+          ? "تم تأكيد الإيداع وإضافة الرصيد"
+          : "Deposit confirmed and wallet updated",
+      );
+      resetDepositFlow();
       setIsDepositDialogOpen(false);
     } catch (error: any) {
       toast.error(error.message || t("balance.chargeError"));
+    } finally {
+      setIsSubmittingDeposit(false);
+    }
+  };
+
+  const handleResendDepositOtp = async () => {
+    if (activeDepositProvider !== "syriatel-cash") return;
+    if (!activePaymentId) return;
+
+    try {
+      setIsResendingDepositOtp(true);
+      const response = await walletService.resendDepositOtp(activePaymentId);
+      if (response?.success === false) {
+        throw new Error(response?.message || t("balance.chargeError"));
+      }
+
+      setDepositStatusText(
+        language === "ar" ? "تمت إعادة إرسال الرمز" : "OTP resent",
+      );
+      toast.success(language === "ar" ? "تمت إعادة إرسال الرمز" : "OTP resent");
+    } catch (error: any) {
+      toast.error(error.message || t("balance.chargeError"));
+    } finally {
+      setIsResendingDepositOtp(false);
     }
   };
 
@@ -355,12 +518,52 @@ export default function Balance() {
             </DialogHeader>
             <div className="space-y-4">
               <div>
+                <Label htmlFor="deposit-provider">
+                  {language === "ar" ? "وسيلة الإيداع" : "Deposit method"}
+                </Label>
+                <Select
+                  value={depositProvider}
+                  onValueChange={(value) => {
+                    const nextProvider = value as DepositProvider;
+                    setDepositProvider(nextProvider);
+                    if (nextProvider === "syriatel-cash") {
+                      setDepositCurrency("SYP");
+                    }
+                    setActivePaymentId("");
+                    setDepositOtp("");
+                    setDepositStatusText("");
+                  }}
+                >
+                  <SelectTrigger id="deposit-provider">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="paymera">
+                      {language === "ar" ? "بايميرا" : "Paymera"}
+                    </SelectItem>
+                    <SelectItem value="syriatel-cash">
+                      {t("balance.syriatelCash")}
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div>
                 <Label htmlFor="deposit-currency">{t("currency")}</Label>
                 <Select
                   value={depositCurrency}
-                  onValueChange={(value) =>
-                    setDepositCurrency(value as Currency)
-                  }
+                  onValueChange={(value) => {
+                    const nextCurrency = value as Currency;
+                    if (
+                      depositProvider === "syriatel-cash" &&
+                      nextCurrency !== "SYP"
+                    ) {
+                      setDepositCurrency("SYP");
+                      return;
+                    }
+
+                    setDepositCurrency(nextCurrency);
+                  }}
                 >
                   <SelectTrigger>
                     <SelectValue />
@@ -369,9 +572,11 @@ export default function Balance() {
                     <SelectItem value="SYP">
                       {t("syrianPoundForLocalRecharge")}
                     </SelectItem>
-                    <SelectItem value="USD">
-                      {t("usDollarForInternationalRecharge")}
-                    </SelectItem>
+                    {depositProvider === "syriatel-cash" ? null : (
+                      <SelectItem value="USD">
+                        {t("usDollarForInternationalRecharge")}
+                      </SelectItem>
+                    )}
                   </SelectContent>
                 </Select>
               </div>
@@ -400,66 +605,139 @@ export default function Balance() {
                   )}
                 </p>
               </div>
-              <div>
-                <Label htmlFor="deposit-method">{t("paymentMethod")}</Label>
-                <Select value={depositMethod} onValueChange={setDepositMethod}>
-                  <SelectTrigger>
-                    <SelectValue placeholder={t("selectPaymentMethod")} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {depositMethods.map((method) => (
-                      <SelectItem key={method.value} value={method.value}>
-                        <div className="flex items-center gap-2">
-                          <method.icon className="h-4 w-4" />
-                          {method.label}
-                        </div>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
 
-              {depositMethod === "mobile-payment" && (
-                <Card className="border-indigo-200 bg-indigo-50">
-                  <CardContent className="pt-5">
-                    <div className="space-y-3 text-center">
-                      <h4 className="font-semibold text-indigo-900">
-                        {language === "ar"
-                          ? "الإيداع عبر شام كاش"
-                          : "Deposit via Sham Cash"}
-                      </h4>
-                      <p className="text-sm text-indigo-800">
-                        {language === "ar"
-                          ? "امسح رمز QR التالي ثم نفّذ التحويل بنفس المبلغ قبل تأكيد الإيداع."
-                          : "Scan the following QR code, then transfer the same amount before confirming deposit."}
-                      </p>
-                      <div className="mx-auto w-fit rounded-xl bg-white p-3 shadow-sm">
-                        <img
-                          src={SHAM_CASH_QR_URL}
-                          alt="Sham Cash QR"
-                          className="h-[180px] w-[180px] rounded"
-                        />
-                      </div>
-                      <div className="text-sm text-indigo-900 space-y-1">
-                        <p className="break-all">
-                          <span className="font-medium">
-                            {language === "ar" ? "المعرّف:" : "ID:"}
-                          </span>{" "}
-                          {SHAM_CASH_ACCOUNT_ID}
-                        </p>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
+              <Card className="border-blue-200 bg-blue-50">
+                <CardContent className="pt-4">
+                  <p className="text-sm text-blue-900">
+                    {activeDepositProvider === "paymera"
+                      ? language === "ar"
+                        ? "سيتم نقلك إلى بوابة Paymera لإتمام الدفع. بعد الإتمام ارجع وتحقق من الحالة."
+                        : "You will be redirected to the Paymera gateway. After payment, return and check status."
+                      : language === "ar"
+                        ? "سيتم إرسال طلب دفع عبر Syriatel Cash إلى رقمك المسجل. أدخل رمز التحقق الذي يصلك ثم أكد العملية."
+                        : "A Syriatel Cash payment request will be sent to your registered number. Enter the OTP you receive, then confirm the payment."}
+                  </p>
+                  {activePaymentId ? (
+                    <p className="mt-2 text-xs text-blue-800 break-all">
+                      {language === "ar" ? "رقم العملية:" : "Transaction ID:"}{" "}
+                      {activePaymentId}
+                    </p>
+                  ) : null}
+                  {activeDepositProvider === "syriatel-cash" && user?.phone ? (
+                    <p className="mt-1 text-xs text-blue-800 break-all">
+                      {language === "ar" ? "سيتم الإرسال إلى:" : "Sent to:"}{" "}
+                      {user.phone}
+                    </p>
+                  ) : null}
+                  {depositStatusText ? (
+                    <p className="mt-1 text-xs text-blue-800">
+                      {language === "ar" ? "الحالة:" : "Status:"}{" "}
+                      {depositStatusText}
+                    </p>
+                  ) : null}
+                </CardContent>
+              </Card>
+
+              {activePaymentId && activeDepositProvider === "syriatel-cash" ? (
+                <div className="space-y-4 rounded-lg border border-blue-200 bg-white p-4">
+                  <div>
+                    <Label htmlFor="deposit-otp">
+                      {language === "ar" ? "رمز التحقق OTP" : "OTP code"}
+                    </Label>
+                    <Input
+                      id="deposit-otp"
+                      inputMode="numeric"
+                      placeholder={
+                        language === "ar" ? "أدخل الرمز" : "Enter OTP"
+                      }
+                      value={depositOtp}
+                      onChange={(e) => setDepositOtp(e.target.value)}
+                    />
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      onClick={handleConfirmDeposit}
+                      className="flex-1"
+                      disabled={isSubmittingDeposit}
+                    >
+                      {isSubmittingDeposit
+                        ? language === "ar"
+                          ? "جاري التأكيد..."
+                          : "Confirming..."
+                        : language === "ar"
+                          ? "تأكيد الإيداع"
+                          : "Confirm deposit"}
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      onClick={handleResendDepositOtp}
+                      disabled={isResendingDepositOtp}
+                    >
+                      {isResendingDepositOtp
+                        ? language === "ar"
+                          ? "جاري الإرسال..."
+                          : "Resending..."
+                        : language === "ar"
+                          ? "إعادة إرسال OTP"
+                          : "Resend OTP"}
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
 
               <div className="flex gap-2">
-                <Button onClick={handleDeposit} className="flex-1">
-                  {t("confirmDeposit")}
+                <Button
+                  onClick={
+                    activePaymentId ? checkActiveDepositStatus : handleDeposit
+                  }
+                  className="flex-1"
+                  disabled={isSubmittingDeposit}
+                >
+                  {activePaymentId
+                    ? isCheckingDeposit
+                      ? language === "ar"
+                        ? "جاري التحقق..."
+                        : "Checking..."
+                      : language === "ar"
+                        ? "تحقق من الحالة"
+                        : "Check status"
+                    : isSubmittingDeposit
+                      ? language === "ar"
+                        ? "جاري الإرسال..."
+                        : "Sending..."
+                      : language === "ar"
+                        ? "إرسال الطلب"
+                        : "Sendrequest"}
+                </Button>
+                <Button
+                  variant="secondary"
+                  onClick={checkActiveDepositStatus}
+                  className="flex-1"
+                  disabled={!activePaymentId || isCheckingDeposit}
+                >
+                  {isCheckingDeposit
+                    ? language === "ar"
+                      ? "جاري التحقق..."
+                      : "Checking..."
+                    : language === "ar"
+                      ? "تحقق من الحالة"
+                      : "Check status"}
                 </Button>
                 <Button
                   variant="outline"
-                  onClick={() => setIsDepositDialogOpen(false)}
+                  onClick={async () => {
+                    try {
+                      if (activePaymentId) {
+                        await walletService.cancelDeposit(activePaymentId);
+                      }
+                    } catch {
+                      // Ignore cancellation errors on manual close.
+                    } finally {
+                      resetDepositFlow();
+                      setIsDepositDialogOpen(false);
+                    }
+                  }}
                   className="flex-1"
                 >
                   {t("cancel")}

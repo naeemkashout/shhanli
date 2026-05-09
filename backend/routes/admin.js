@@ -22,8 +22,10 @@ const {
   deleteUser,
   getAllShipments,
   getCancellationRequests,
+  getEditRequests,
   updateShipmentStatus,
   reviewCancellationRequest,
+  reviewEditRequest,
   getAllTransactions,
   reviewWithdrawalRequest,
   importComparisonInvoices,
@@ -113,6 +115,11 @@ router.get(
   managementAuth,
   safeHandler(getCancellationRequests, "getCancellationRequests"),
 );
+router.get(
+  "/edit-requests",
+  managementAuth,
+  safeHandler(getEditRequests, "getEditRequests"),
+);
 router.put(
   "/shipments/:id/status",
   managementAuth,
@@ -122,6 +129,11 @@ router.put(
   "/shipments/:id/cancellation-request",
   managementAuth,
   safeHandler(reviewCancellationRequest, "reviewCancellationRequest"),
+);
+router.put(
+  "/shipments/:id/edit-request",
+  managementAuth,
+  safeHandler(reviewEditRequest, "reviewEditRequest"),
 );
 
 // Transactions

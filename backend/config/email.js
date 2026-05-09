@@ -82,7 +82,7 @@ const sendPasswordResetEmail = async (to, resetToken) => {
   const fromAddress =
     process.env.EMAIL_USER && !process.env.EMAIL_USER.includes("your-")
       ? process.env.EMAIL_USER
-      : etherealUser || "no-reply@shhanli.local";
+      : etherealUser || "no-reply@shipme.local";
 
   const mailOptions = {
     from: `"شحنلي" <${fromAddress}>`,
@@ -246,7 +246,7 @@ const sendWelcomeEmail = async (to, userName) => {
   const fromAddress =
     process.env.EMAIL_USER && !process.env.EMAIL_USER.includes("your-")
       ? process.env.EMAIL_USER
-      : etherealUser || "no-reply@shhanli.local";
+      : etherealUser || "no-reply@shipme.local";
 
   const mailOptions = {
     from: `"شحنلي" <${fromAddress}>`,

@@ -36,6 +36,13 @@ export default function ShipmentsManagement() {
   const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+  const [companyFilter, setCompanyFilter] = useState("");
+  const [companyNameFilter, setCompanyNameFilter] = useState("");
+  const [senderNameFilter, setSenderNameFilter] = useState("");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const [shipmentsCount, setShipmentsCount] = useState(0);
+  const [companies, setCompanies] = useState<any[]>([]);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [selectedShipment, setSelectedShipment] = useState<any>(null);
@@ -48,7 +55,24 @@ export default function ShipmentsManagement() {
 
   useEffect(() => {
     fetchShipments();
-  }, [page, search, statusFilter]);
+  }, [page, search, statusFilter, companyFilter, companyNameFilter, senderNameFilter, startDate, endDate]);
+
+  useEffect(() => {
+    if (!user || isCompanyAdmin) return;
+    const fetchCompanies = async () => {
+      try {
+        const response = await adminService.getAllCompanies({ limit: 100 });
+        setCompanies(response.data || []);
+      } catch (error: any) {
+        toast.error(
+          error.message ||
+            tr("فشل تحميل شركات الشحن", "Failed to load shipping companies"),
+        );
+      }
+    };
+
+    fetchCompanies();
+  }, [user, isCompanyAdmin]);
 
   useEffect(() => {
     if (!isCompanyAdmin) return;
@@ -62,7 +86,7 @@ export default function ShipmentsManagement() {
     if (!companyId) return;
 
     const apiBaseUrl =
-      import.meta.env.VITE_API_URL || "http://localhost:5001/api";
+      import.meta.env.VITE_API_URL || "http://localhost:5002/api";
     const socketUrl = apiBaseUrl.replace(/\/api\/?$/, "");
 
     const socket: Socket = io(socketUrl, {
@@ -72,15 +96,6 @@ export default function ShipmentsManagement() {
 
     socket.on("connect", () => {
       socket.emit("join-company-room", companyId);
-    });
-
-    socket.on("cancellation-request-created", (payload: any) => {
-      toast.info(
-        language === "ar"
-          ? `طلب إلغاء جديد للشحنة ${payload?.trackingNumber || ""}`
-          : `New cancellation request for shipment ${payload?.trackingNumber || ""}`,
-      );
-      fetchShipments();
     });
 
     socket.on("shipment-weight-adjusted", (payload: any) => {
@@ -100,14 +115,27 @@ export default function ShipmentsManagement() {
   const fetchShipments = async () => {
     try {
       setIsLoading(true);
-      const response = await adminService.getAllShipments({
+      const params: any = {
         search,
         status: statusFilter,
+        senderName: senderNameFilter,
+        startDate,
+        endDate,
         page,
         limit: 10,
-      });
+      };
+
+      if (companyFilter) {
+        params.companyId = companyFilter;
+      }
+      if (companyNameFilter) {
+        params.companyName = companyNameFilter;
+      }
+
+      const response = await adminService.getAllShipments(params);
       setShipments(response.data);
       setTotalPages(response.pagination.pages);
+      setShipmentsCount(response.pagination.total);
     } catch (error: any) {
       toast.error(
         error.message || tr("فشل تحميل الشحنات", "Failed to load shipments"),
@@ -119,8 +147,21 @@ export default function ShipmentsManagement() {
 
   const handleUpdateStatus = (shipment: any) => {
     setSelectedShipment(shipment);
+    // حساب الحالة التالية المتاحة
+    const statusOrder = [
+      "pending",
+      "confirmed",
+      "picked-up",
+      "in-transit",
+      "delivered",
+    ];
+    const currentIndex = statusOrder.indexOf(shipment.status);
+    let nextStatus = "";
+    if (currentIndex > -1 && currentIndex < statusOrder.length - 1) {
+      nextStatus = statusOrder[currentIndex + 1];
+    }
     setUpdateFormData({
-      status: shipment.status,
+      status: nextStatus,
       correctedWeight: shipment.package?.weight
         ? String(shipment.package.weight)
         : "",
@@ -174,43 +215,6 @@ export default function ShipmentsManagement() {
     }
   };
 
-  const handleReviewCancellationRequest = async (
-    shipmentId: string,
-    action: "approve" | "reject",
-  ) => {
-    const confirmed = confirm(
-      action === "approve"
-        ? tr(
-            "هل أنت متأكد من الموافقة على طلب الإلغاء؟",
-            "Are you sure you want to approve the cancellation request?",
-          )
-        : tr(
-            "هل أنت متأكد من رفض طلب الإلغاء؟",
-            "Are you sure you want to reject the cancellation request?",
-          ),
-    );
-
-    if (!confirmed) return;
-
-    try {
-      await adminService.reviewCancellationRequest(shipmentId, { action });
-      toast.success(
-        action === "approve"
-          ? tr("تمت الموافقة على طلب الإلغاء", "Cancellation request approved")
-          : tr("تم رفض طلب الإلغاء", "Cancellation request rejected"),
-      );
-      fetchShipments();
-    } catch (error: any) {
-      toast.error(
-        error.message ||
-          tr(
-            "فشل معالجة طلب الإلغاء",
-            "Failed to process cancellation request",
-          ),
-      );
-    }
-  };
-
   const getStatusColor = (status: string) => {
     const colors: any = {
       pending: "bg-yellow-100 text-yellow-800",
@@ -225,16 +229,80 @@ export default function ShipmentsManagement() {
     return colors[status] || "bg-gray-100 text-gray-800";
   };
 
-  const statusOptions = [
-    { value: "pending", label: "معلقة" },
-    { value: "confirmed", label: "مؤكدة" },
-    { value: "picked-up", label: "تم الاستلام" },
-    { value: "in-transit", label: "قيد النقل" },
-    { value: "out-for-delivery", label: "خارج للتوصيل" },
-    { value: "delivered", label: "تم التسليم" },
-    { value: "cancelled", label: "ملغاة" },
-    { value: "returned", label: "مرتجعة" },
+  const allStatusOptions = [
+    { value: "pending", label: tr("معلقة", "Pending"), key: "status.pending" },
+    {
+      value: "confirmed",
+      label: tr("مؤكدة", "Confirmed"),
+      key: "status.confirmed",
+    },
+    {
+      value: "picked-up",
+      label: tr("تم الاستلام من المرسل", "Picked Up"),
+      key: "status.picked-up",
+    },
+    {
+      value: "in-transit",
+      label: tr("قيد النقل", "In Transit"),
+      key: "status.in-transit",
+    },
+    {
+      value: "out-for-delivery",
+      label: tr("خارج للتوصيل", "Out For Delivery"),
+      key: "status.out-for-delivery",
+    },
+    {
+      value: "delivered",
+      label: tr("تم التسليم", "Delivered"),
+      key: "status.delivered",
+    },
+    {
+      value: "cancelled",
+      label: tr("ملغية", "Cancelled"),
+      key: "status.cancelled",
+    },
+    {
+      value: "returned",
+      label: tr("مرتجعة", "Returned"),
+      key: "status.returned",
+    },
   ];
+
+  // دالة ترجمة الحالة لأي مكان في الجدول
+  const getStatusLabel = (status) => {
+    const found = allStatusOptions.find((s) => s.value === status);
+    return found ? found.label : status;
+  };
+
+  // Restrict company-admins to only three statuses
+  // منطق الترتيب: لا يمكن القفز بين الحالات، ولا تظهر حالات "ملغية" و"خارج التوصيل" لشركة الشحن
+  let statusOptions = allStatusOptions;
+  if (isCompanyAdmin) {
+    // إلغاء حالة "ملغية" و"خارج التوصيل"
+    statusOptions = statusOptions.filter(
+      (opt) => opt.value !== "cancelled" && opt.value !== "out-for-delivery",
+    );
+    // إذا كانت الحالة الحالية "confirmed"، إخفاء "returned"
+    if (selectedShipment?.status === "confirmed") {
+      statusOptions = statusOptions.filter((opt) => opt.value !== "returned");
+    }
+    // السماح فقط بالحالة التالية في الترتيب
+    const statusOrder = [
+      "pending",
+      "confirmed",
+      "picked-up",
+      "in-transit",
+      "delivered",
+    ];
+    const currentIndex = statusOrder.indexOf(selectedShipment?.status || "");
+    if (currentIndex > -1 && currentIndex < statusOrder.length - 1) {
+      const nextStatus = statusOrder[currentIndex + 1];
+      statusOptions = statusOptions.filter((opt) => opt.value === nextStatus);
+    } else {
+      // إذا لم يوجد حالة تالية، لا تظهر خيارات
+      statusOptions = [];
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -260,28 +328,100 @@ export default function ShipmentsManagement() {
 
       <Card>
         <CardHeader>
-          <div className="flex flex-col sm:flex-row items-center gap-4">
-            <div className="relative flex-1 w-full">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-              <Input
-                placeholder="البحث برقم التتبع، المرسل، أو المستلم..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="pl-10"
-              />
+          <div className="space-y-4">
+            <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+              <div className="relative flex-1 w-full">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+                <Input
+                  placeholder="البحث برقم التتبع، المرسل، أو المستلم..."
+                  value={search}
+                  onChange={(e) => {
+                    setSearch(e.target.value);
+                    setPage(1);
+                  }}
+                  className="pl-10"
+                />
+              </div>
+              <div className="flex flex-wrap items-center gap-3">
+                <select
+                  value={statusFilter}
+                  onChange={(e) => {
+                    setStatusFilter(e.target.value);
+                    setPage(1);
+                  }}
+                  className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">جميع الحالات</option>
+                  {statusOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+                {!isCompanyAdmin && (
+                  <select
+                    value={companyFilter}
+                    onChange={(e) => {
+                      setCompanyFilter(e.target.value);
+                      setPage(1);
+                    }}
+                    className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="">جميع شركات الشحن</option>
+                    {companies.map((company) => (
+                      <option key={company._id} value={company._id}>
+                        {company.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
             </div>
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="">جميع الحالات</option>
-              {statusOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
+            <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-4">
+              <Input
+                placeholder="فلترة باسم شركة الشحن"
+                value={companyNameFilter}
+                onChange={(e) => {
+                  setCompanyNameFilter(e.target.value);
+                  setPage(1);
+                }}
+              />
+              <Input
+                placeholder="فلترة باسم المرسل"
+                value={senderNameFilter}
+                onChange={(e) => {
+                  setSenderNameFilter(e.target.value);
+                  setPage(1);
+                }}
+              />
+              <div>
+                <Label>من تاريخ</Label>
+                <Input
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => {
+                    setStartDate(e.target.value);
+                    setPage(1);
+                  }}
+                />
+              </div>
+              <div>
+                <Label>إلى تاريخ</Label>
+                <Input
+                  type="date"
+                  value={endDate}
+                  onChange={(e) => {
+                    setEndDate(e.target.value);
+                    setPage(1);
+                  }}
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="text-sm text-slate-600">
+                  عدد الشحنات: <span className="font-semibold">{shipmentsCount}</span>
+                </div>
+              </div>
+            </div>
           </div>
         </CardHeader>
         <CardContent>
@@ -302,7 +442,6 @@ export default function ShipmentsManagement() {
                       <TableHead>شركة الشحن</TableHead>
                       <TableHead>الوزن</TableHead>
                       <TableHead>الحالة</TableHead>
-                      {!isCompanyAdmin && <TableHead>طلب الإلغاء</TableHead>}
                       <TableHead>التكلفة</TableHead>
                       <TableHead>التاريخ</TableHead>
                       <TableHead>الإجراءات</TableHead>
@@ -360,33 +499,11 @@ export default function ShipmentsManagement() {
                         </TableCell>
                         <TableCell>
                           <Badge className={getStatusColor(shipment.status)}>
-                            {statusOptions.find(
-                              (s) => s.value === shipment.status,
-                            )?.label || shipment.status}
+                            {(() => {
+                              return getStatusLabel(shipment.status);
+                            })()}
                           </Badge>
                         </TableCell>
-                        {!isCompanyAdmin && (
-                          <TableCell>
-                            {shipment.cancellationRequest?.status ===
-                            "pending" ? (
-                              <Badge className="bg-orange-100 text-orange-800">
-                                قيد المراجعة
-                              </Badge>
-                            ) : shipment.cancellationRequest?.status ===
-                              "approved" ? (
-                              <Badge className="bg-green-100 text-green-800">
-                                مقبول
-                              </Badge>
-                            ) : shipment.cancellationRequest?.status ===
-                              "rejected" ? (
-                              <Badge className="bg-red-100 text-red-800">
-                                مرفوض
-                              </Badge>
-                            ) : (
-                              <span className="text-gray-500">-</span>
-                            )}
-                          </TableCell>
-                        )}
                         <TableCell>
                           {shipment.cost.amount} {shipment.cost.currency}
                         </TableCell>
@@ -404,38 +521,6 @@ export default function ShipmentsManagement() {
                             >
                               <Edit className="w-4 h-4" />
                             </Button>
-                            {!isCompanyAdmin &&
-                              shipment.cancellationRequest?.status ===
-                                "pending" && (
-                                <>
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    className="text-green-700 border-green-300"
-                                    onClick={() =>
-                                      handleReviewCancellationRequest(
-                                        shipment._id,
-                                        "approve",
-                                      )
-                                    }
-                                  >
-                                    قبول
-                                  </Button>
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    className="text-red-700 border-red-300"
-                                    onClick={() =>
-                                      handleReviewCancellationRequest(
-                                        shipment._id,
-                                        "reject",
-                                      )
-                                    }
-                                  >
-                                    رفض
-                                  </Button>
-                                </>
-                              )}
                           </div>
                         </TableCell>
                       </TableRow>
@@ -496,9 +581,16 @@ export default function ShipmentsManagement() {
                 }
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg"
               >
-                {statusOptions.map((option) => (
+                {(isCompanyAdmin
+                  ? statusOptions.filter(
+                      (option) => option.value !== selectedShipment?.status,
+                    )
+                  : statusOptions
+                ).map((option) => (
                   <option key={option.value} value={option.value}>
-                    {option.label}
+                    {option.key && typeof t === "function"
+                      ? t(option.key)
+                      : option.label}
                   </option>
                 ))}
               </select>

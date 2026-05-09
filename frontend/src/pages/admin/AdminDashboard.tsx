@@ -3,7 +3,6 @@ import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
-  Ban,
   Users,
   Package,
   DollarSign,
@@ -25,9 +24,6 @@ export default function AdminDashboard() {
   const { user } = useAuth();
   const isPlatformAdmin = ["admin", "super-admin"].includes(user?.role || "");
   const [stats, setStats] = useState<any>(null);
-  const [cancellationRequests, setCancellationRequests] = useState<any[]>([]);
-  const [pendingCancellationCount, setPendingCancellationCount] = useState(0);
-  const [isCancellationLoading, setIsCancellationLoading] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [period, setPeriod] = useState("30");
 
@@ -40,25 +36,6 @@ export default function AdminDashboard() {
       setIsLoading(true);
       const data = await adminService.getDashboardStats(period);
       setStats(data);
-
-      if (!isPlatformAdmin) {
-        try {
-          setIsCancellationLoading(true);
-          const response = await adminService.getCancellationRequests({
-            status: "pending",
-            page: 1,
-            limit: 5,
-          });
-          setCancellationRequests(response?.data || []);
-          setPendingCancellationCount(Number(response?.pagination?.total || 0));
-        } catch {
-          // Keep dashboard usable even when cancellation requests fail.
-          setCancellationRequests([]);
-          setPendingCancellationCount(0);
-        } finally {
-          setIsCancellationLoading(false);
-        }
-      }
     } catch (error: any) {
       toast.error(
         error.message ||
@@ -109,7 +86,6 @@ export default function AdminDashboard() {
         </select>
       </div>
 
-      {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {isPlatformAdmin ? (
           <Card className="hover:shadow-lg transition-shadow">
@@ -178,7 +154,6 @@ export default function AdminDashboard() {
           </Card>
         )}
 
-        {/* Total Shipments */}
         <Card className="hover:shadow-lg transition-shadow">
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
@@ -201,7 +176,6 @@ export default function AdminDashboard() {
           </CardContent>
         </Card>
 
-        {/* Pending Shipments */}
         <Card className="hover:shadow-lg transition-shadow">
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
@@ -222,33 +196,6 @@ export default function AdminDashboard() {
           </CardContent>
         </Card>
 
-        {!isPlatformAdmin && (
-          <Card className="hover:shadow-lg transition-shadow">
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-600">
-                    طلبات الإلغاء
-                  </p>
-                  <p className="text-3xl font-bold text-gray-900 mt-2">
-                    {isCancellationLoading ? "..." : pendingCancellationCount}
-                  </p>
-                  <p className="text-sm text-red-600 mt-1">
-                    <Ban className="w-4 h-4 inline mr-1" />
-                    {pendingCancellationCount > 0
-                      ? tr("قيد المراجعة الآن", "Pending review now")
-                      : tr("لا توجد طلبات حالياً", "No active requests")}
-                  </p>
-                </div>
-                <div className="p-3 bg-red-100 rounded-full">
-                  <Ban className="w-8 h-8 text-red-600" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Revenue */}
         <Card className="hover:shadow-lg transition-shadow">
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
@@ -313,7 +260,6 @@ export default function AdminDashboard() {
         )}
       </div>
 
-      {/* Shipment Status Breakdown */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {isPlatformAdmin ? (
           <Card>
@@ -400,7 +346,7 @@ export default function AdminDashboard() {
           </CardContent>
         </Card>
 
-        {isPlatformAdmin ? (
+        {isPlatformAdmin && (
           <Card>
             <CardHeader>
               <CardTitle>النشاطات الأخيرة</CardTitle>
@@ -431,55 +377,6 @@ export default function AdminDashboard() {
                   </p>
                 )}
               </div>
-            </CardContent>
-          </Card>
-        ) : (
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between gap-3">
-                <CardTitle>طلبات الإلغاء</CardTitle>
-                {pendingCancellationCount > 0 && (
-                  <span className="inline-flex min-w-6 h-6 items-center justify-center rounded-full bg-red-600 px-2 text-xs font-bold text-white">
-                    {pendingCancellationCount > 99
-                      ? "99+"
-                      : pendingCancellationCount}
-                  </span>
-                )}
-              </div>
-            </CardHeader>
-            <CardContent>
-              {isCancellationLoading ? (
-                <div className="flex justify-center py-8">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {cancellationRequests.map((request: any) => (
-                    <div
-                      key={request._id}
-                      className="flex items-start gap-3 rounded-lg border border-gray-200 p-3"
-                    >
-                      <Clock className="w-5 h-5 text-orange-600 mt-0.5" />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-gray-900">
-                          الشحنة: {request.trackingNumber || "-"}
-                        </p>
-                        <p className="text-xs text-gray-600 mt-1 truncate">
-                          {request.userId?.name || "مستخدم"}
-                        </p>
-                        <p className="text-xs text-gray-500 mt-1 truncate">
-                          {request.cancellationRequest?.reason || "بدون سبب"}
-                        </p>
-                      </div>
-                    </div>
-                  ))}
-                  {cancellationRequests.length === 0 && (
-                    <p className="text-center text-gray-500 py-4">
-                      لا توجد طلبات إلغاء قيد المراجعة
-                    </p>
-                  )}
-                </div>
-              )}
             </CardContent>
           </Card>
         )}

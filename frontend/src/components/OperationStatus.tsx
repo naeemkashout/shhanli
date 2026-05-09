@@ -30,9 +30,9 @@ interface OperationStatusProps {
 export default function OperationStatus({
   state,
   title,
-  loadingMessage = "جاري المعالجة...",
-  successMessage = "تمت العملية بنجاح",
-  errorMessage = "حدث خطأ أثناء العملية",
+  loadingMessage,
+  successMessage,
+  errorMessage,
   onRetry,
   onContinue,
   onClose,
@@ -42,6 +42,14 @@ export default function OperationStatus({
   className = "",
 }: OperationStatusProps) {
   const { t, isRTL, language } = useLanguage();
+  const resolvedLoadingMessage =
+    loadingMessage || (isRTL ? "جاري المعالجة..." : "Processing...");
+  const resolvedSuccessMessage =
+    successMessage ||
+    (isRTL ? "تمت العملية بنجاح" : "Operation completed successfully");
+  const resolvedErrorMessage =
+    errorMessage ||
+    (isRTL ? "حدث خطأ أثناء العملية" : "An error occurred during the operation");
   if (state === "idle") return null;
 
   const getIcon = () => {
@@ -60,11 +68,11 @@ export default function OperationStatus({
   const getMessage = () => {
     switch (state) {
       case "loading":
-        return loadingMessage;
+        return resolvedLoadingMessage;
       case "success":
-        return successMessage;
+        return resolvedSuccessMessage;
       case "error":
-        return errorMessage;
+        return resolvedErrorMessage;
       default:
         return "";
     }
@@ -102,7 +110,7 @@ export default function OperationStatus({
           <div className="flex gap-3 justify-center">
             {state === "error" && showRetry && onRetry && (
               <Button onClick={onRetry} variant="outline">
-                إعادة المحاولة
+                {isRTL ? "إعادة المحاولة" : "Retry"}
               </Button>
             )}
 

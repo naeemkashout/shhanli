@@ -152,6 +152,11 @@ class AdminService {
   async getAllShipments(params?: {
     status?: string;
     search?: string;
+    companyId?: string;
+    companyName?: string;
+    senderName?: string;
+    startDate?: string;
+    endDate?: string;
     page?: number;
     limit?: number;
   }): Promise<any> {
@@ -171,6 +176,22 @@ class AdminService {
   }): Promise<any> {
     try {
       const response = await api.get("/admin/cancellation-requests", {
+        params,
+      });
+      return response.data;
+    } catch (error) {
+      throw new Error(handleApiError(error));
+    }
+  }
+
+  async getEditRequests(params?: {
+    status?: "pending" | "approved" | "rejected" | "all";
+    search?: string;
+    page?: number;
+    limit?: number;
+  }): Promise<any> {
+    try {
+      const response = await api.get("/admin/edit-requests", {
         params,
       });
       return response.data;
@@ -207,6 +228,25 @@ class AdminService {
     try {
       const response = await api.put(
         `/admin/shipments/${id}/cancellation-request`,
+        data,
+      );
+      return response.data;
+    } catch (error) {
+      throw new Error(handleApiError(error));
+    }
+  }
+
+  async reviewEditRequest(
+    id: string,
+    data: {
+      action: "approve" | "reject";
+      note?: string;
+      shipmentUpdates?: Record<string, any>;
+    },
+  ): Promise<any> {
+    try {
+      const response = await api.put(
+        `/admin/shipments/${id}/edit-request`,
         data,
       );
       return response.data;

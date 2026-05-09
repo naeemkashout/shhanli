@@ -43,6 +43,7 @@ export interface CreateShipmentData {
     value: number;
     currency: string;
     fragile?: boolean;
+    packagingRequested?: boolean;
   };
   shippingCompany: {
     id: string;
@@ -52,6 +53,7 @@ export interface CreateShipmentData {
     amount: number;
     currency: string;
     paymentMethod: "wallet" | "cod";
+    packagingFee?: number;
     volumetricWeight?: number;
     actualWeight?: number;
     billingWeight?: number;
@@ -60,9 +62,15 @@ export interface CreateShipmentData {
 }
 
 class ShipmentService {
-  async createShipment(data: CreateShipmentData): Promise<any> {
+  async createShipment(
+    data: CreateShipmentData | FormData,
+    isFormData = false,
+  ): Promise<any> {
     try {
-      const response = await api.post("/shipments", data);
+      const config = isFormData
+        ? { headers: { "Content-Type": "multipart/form-data" } }
+        : undefined;
+      const response = await api.post("/shipments", data, config);
       return response.data;
     } catch (error) {
       throw new Error(handleApiError(error));
@@ -103,6 +111,18 @@ class ShipmentService {
   async cancelShipment(id: string, reason: string): Promise<any> {
     try {
       const response = await api.put(`/shipments/${id}/cancel`, { reason });
+      return response.data;
+    } catch (error) {
+      throw new Error(handleApiError(error));
+    }
+  }
+
+  async requestShipmentEdit(
+    id: string,
+    data: { reason: string; requestedChanges: string },
+  ): Promise<any> {
+    try {
+      const response = await api.put(`/shipments/${id}/edit-request`, data);
       return response.data;
     } catch (error) {
       throw new Error(handleApiError(error));

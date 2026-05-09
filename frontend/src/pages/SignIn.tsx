@@ -110,7 +110,7 @@ export default function SignIn() {
             </div>
             <CardTitle className="text-xl sm:text-2xl font-bold">
               {/* {t("app.name")} */}
-              شحنلي
+              {language === "ar" ? "شحنلي" : "Shipme"}
             </CardTitle>
             <CardDescription className="text-sm sm:text-base">
               {t("auth.signIn")}

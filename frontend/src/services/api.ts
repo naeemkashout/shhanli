@@ -36,7 +36,9 @@ const IS_CUSTOM_API_URL = Boolean(import.meta.env.VITE_API_URL);
 const getNextLocalApiBaseUrl = (currentBaseUrl: string) => {
   const currentIndex = LOCAL_API_BASE_URLS.indexOf(currentBaseUrl);
   if (currentIndex === -1) return LOCAL_API_BASE_URLS[0] || null;
-  return LOCAL_API_BASE_URLS[currentIndex + 1] || null;
+  return (
+    LOCAL_API_BASE_URLS[(currentIndex + 1) % LOCAL_API_BASE_URLS.length] || null
+  );
 };
 
 // Create axios instance
@@ -87,12 +89,13 @@ api.interceptors.response.use(
       !IS_CUSTOM_API_URL &&
       originalRequest &&
       shouldRetryOnFallback &&
+      (originalRequest._baseUrlRetryIndex ?? 0) <
+        LOCAL_API_BASE_URLS.length - 1 &&
       nextBaseUrl &&
       nextBaseUrl !== currentBaseUrl
     ) {
       originalRequest._baseUrlRetryIndex =
-        (originalRequest._baseUrlRetryIndex ??
-          LOCAL_API_BASE_URLS.indexOf(currentBaseUrl)) + 1;
+        (originalRequest._baseUrlRetryIndex ?? 0) + 1;
       originalRequest.baseURL = nextBaseUrl;
       api.defaults.baseURL = nextBaseUrl;
       localStorage.setItem(ACTIVE_API_BASE_URL_KEY, nextBaseUrl);
@@ -139,6 +142,7 @@ export default api;
 // Helper function to handle API errors
 export const handleApiError = (error: any): string => {
   const language = (localStorage.getItem("language") as "ar" | "en") || "ar";
+  const hasArabicText = (value: string) => /[\u0600-\u06FF]/.test(value);
 
   const translations = {
     ar: {
@@ -209,6 +213,263 @@ export const handleApiError = (error: any): string => {
     return null;
   };
 
+  const translateServerMessage = (message?: string) => {
+    if (!message || typeof message !== "string") return null;
+
+    const normalized = message.trim();
+    if (!normalized) return null;
+
+    const baseMessages = [
+      {
+        en: "Invalid action",
+        ar: "إجراء غير صالح",
+      },
+      {
+        en: "Shipment not found",
+        ar: "الشحنة غير موجودة",
+      },
+      {
+        en: "Not authorized to review this request",
+        ar: "غير مخول لمراجعة هذا الطلب",
+      },
+      {
+        en: "No pending edit request for this shipment",
+        ar: "لا يوجد طلب تعديل معلّق لهذه الشحنة",
+      },
+      {
+        en: "No pending cancellation request for this shipment",
+        ar: "لا يوجد طلب إلغاء معلّق لهذه الشحنة",
+      },
+      {
+        en: "Edit request approved",
+        ar: "تمت الموافقة على طلب التعديل",
+      },
+      {
+        en: "Edit request rejected",
+        ar: "تم رفض طلب التعديل",
+      },
+      {
+        en: "Cancellation request approved",
+        ar: "تمت الموافقة على طلب الإلغاء",
+      },
+      {
+        en: "Cancellation request rejected",
+        ar: "تم رفض طلب الإلغاء",
+      },
+      {
+        en: "Edit request reason is required",
+        ar: "سبب طلب التعديل مطلوب",
+      },
+      {
+        en: "Requested changes details are required",
+        ar: "تفاصيل التعديلات المطلوبة مطلوبة",
+      },
+      {
+        en: "Not authorized to edit this shipment",
+        ar: "غير مخول لتعديل هذه الشحنة",
+      },
+      {
+        en: "Only pending shipments can be edited",
+        ar: "يمكن تعديل الشحنات المعلقة فقط",
+      },
+      {
+        en: "Cannot request edit while cancellation request is pending",
+        ar: "لا يمكن طلب تعديل أثناء وجود طلب إلغاء معلّق",
+      },
+      {
+        en: "Edit request already submitted",
+        ar: "تم إرسال طلب التعديل مسبقا",
+      },
+      {
+        en: "Shipment edit request submitted successfully",
+        ar: "تم إرسال طلب تعديل الشحنة بنجاح",
+      },
+      {
+        en: "Cancellation reason is required",
+        ar: "سبب الإلغاء مطلوب",
+      },
+      {
+        en: "Not authorized to cancel this shipment",
+        ar: "غير مخول لإلغاء هذه الشحنة",
+      },
+      {
+        en: "Cannot cancel this shipment",
+        ar: "لا يمكن إلغاء هذه الشحنة",
+      },
+      {
+        en: "Cancellation request already submitted",
+        ar: "تم إرسال طلب الإلغاء مسبقا",
+      },
+      {
+        en: "Cancellation request submitted successfully",
+        ar: "تم إرسال طلب الإلغاء بنجاح",
+      },
+      {
+        en: "Error requesting shipment edit",
+        ar: "حدث خطأ أثناء إرسال طلب تعديل الشحنة",
+      },
+      {
+        en: "Error reviewing edit request",
+        ar: "حدث خطأ أثناء مراجعة طلب التعديل",
+      },
+      {
+        en: "Error cancelling shipment",
+        ar: "حدث خطأ أثناء إلغاء الشحنة",
+      },
+      {
+        en: "Error fetching edit requests",
+        ar: "حدث خطأ أثناء تحميل طلبات التعديل",
+      },
+      {
+        en: "Error fetching cancellation requests",
+        ar: "حدث خطأ أثناء تحميل طلبات الإلغاء",
+      },
+      {
+        en: "Error fetching shipments",
+        ar: "حدث خطأ أثناء تحميل الشحنات",
+      },
+      {
+        en: "Error fetching shipment",
+        ar: "حدث خطأ أثناء تحميل الشحنة",
+      },
+      {
+        en: "Error tracking shipment",
+        ar: "حدث خطأ أثناء تتبع الشحنة",
+      },
+      {
+        en: "Error creating shipment",
+        ar: "حدث خطأ أثناء إنشاء الشحنة",
+      },
+      {
+        en: "Invalid shipping company",
+        ar: "شركة الشحن المحددة غير صالحة",
+      },
+      {
+        en: "Shipping company is not available",
+        ar: "شركة الشحن غير متاحة",
+      },
+      {
+        en: "Selected company does not support local shipping",
+        ar: "الشركة المحددة لا تدعم الشحن المحلي",
+      },
+      {
+        en: "Selected company does not support international shipping",
+        ar: "الشركة المحددة لا تدعم الشحن الدولي",
+      },
+      {
+        en: "For international shipping, sender country cannot be the same as receiver country",
+        ar: "في الشحن الدولي لا يمكن أن تكون دولة المرسل هي نفسها دولة المستلم",
+      },
+      {
+        en: "Selected company does not support cash on delivery",
+        ar: "الشركة المحددة لا تدعم الدفع عند التسليم",
+      },
+      {
+        en: "Selected company does not support express shipping",
+        ar: "الشركة المحددة لا تدعم الشحن السريع",
+      },
+      {
+        en: "Invalid payment method",
+        ar: "طريقة الدفع غير صالحة",
+      },
+      {
+        en: "Invalid shipping type",
+        ar: "نوع الشحن غير صالح",
+      },
+      {
+        en: "Invalid shipping mode",
+        ar: "وضع الشحن غير صالح",
+      },
+      {
+        en: "Invalid shipment data",
+        ar: "بيانات الشحنة غير صالحة",
+      },
+      {
+        en: "Invalid shipment data format",
+        ar: "تنسيق بيانات الشحنة غير صالح",
+      },
+      {
+        en: "User not found",
+        ar: "المستخدم غير موجود",
+      },
+      {
+        en: "Insufficient balance",
+        ar: "الرصيد غير كاف",
+      },
+      {
+        en: "Not authorized to access this shipment",
+        ar: "غير مخول للوصول إلى هذه الشحنة",
+      },
+      {
+        en: "Request has already been reviewed and cannot be processed again",
+        ar: "تمت مراجعة الطلب مسبقا ولا يمكن معالجته مرة أخرى",
+      },
+    ];
+
+    const exactMatch = baseMessages.find(
+      (item) =>
+        item.en.toLowerCase() === normalized.toLowerCase() ||
+        item.ar === normalized,
+    );
+
+    if (exactMatch) {
+      return language === "ar" ? exactMatch.ar : exactMatch.en;
+    }
+
+    const localStatePrefixEn = "Selected company does not support local state:";
+    const localStatePrefixAr = "الشركة المحددة لا تدعم الولاية المحلية:";
+    if (normalized.startsWith(localStatePrefixEn)) {
+      const stateName = normalized.slice(localStatePrefixEn.length).trim();
+      return language === "ar"
+        ? `${localStatePrefixAr} ${stateName}`
+        : `${localStatePrefixEn} ${stateName}`;
+    }
+
+    const countryPrefixEn = "Selected company does not support country:";
+    const countryPrefixAr = "الشركة المحددة لا تدعم الدولة:";
+    if (normalized.startsWith(countryPrefixEn)) {
+      const countryName = normalized.slice(countryPrefixEn.length).trim();
+      return language === "ar"
+        ? `${countryPrefixAr} ${countryName}`
+        : `${countryPrefixEn} ${countryName}`;
+    }
+
+    const prefixedErrors = [
+      {
+        en: "Error requesting shipment edit:",
+        ar: "حدث خطأ أثناء إرسال طلب تعديل الشحنة:",
+      },
+      {
+        en: "Error reviewing edit request:",
+        ar: "حدث خطأ أثناء مراجعة طلب التعديل:",
+      },
+      {
+        en: "Error cancelling shipment:",
+        ar: "حدث خطأ أثناء إلغاء الشحنة:",
+      },
+      {
+        en: "Error creating shipment:",
+        ar: "حدث خطأ أثناء إنشاء الشحنة:",
+      },
+    ];
+
+    const matchedPrefix = prefixedErrors.find((item) =>
+      normalized.toLowerCase().startsWith(item.en.toLowerCase()),
+    );
+
+    if (matchedPrefix) {
+      const detail = normalized.slice(matchedPrefix.en.length).trim();
+      const translatedDetail = translateServerMessage(detail) || detail;
+      const prefix = language === "ar" ? matchedPrefix.ar : matchedPrefix.en;
+      return translatedDetail ? `${prefix} ${translatedDetail}` : prefix;
+    }
+
+    if (language === "ar" && hasArabicText(normalized)) return normalized;
+    if (language === "en" && !hasArabicText(normalized)) return normalized;
+
+    return null;
+  };
+
   if (error.response) {
     const statusCode = error.response.status;
     const serverMessage = error.response.data?.message;
@@ -221,6 +482,11 @@ export const handleApiError = (error: any): string => {
 
     if (mappedFinancialMessage) {
       return mappedFinancialMessage;
+    }
+
+    const translatedServerMessage = translateServerMessage(serverMessage);
+    if (translatedServerMessage) {
+      return translatedServerMessage;
     }
 
     if (statusCode === 401) {

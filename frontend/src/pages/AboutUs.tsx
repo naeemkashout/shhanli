@@ -16,7 +16,7 @@ export default function AboutUs() {
             {isArabic ? "من نحن" : "About Us"}
           </Badge>
           <CardTitle className="text-3xl font-bold">
-            {isArabic ? "شحنلي" : "Shhanli"}
+            {isArabic ? "شحنلي" : "Shipme"}
           </CardTitle>
         </CardHeader>
         <CardContent>

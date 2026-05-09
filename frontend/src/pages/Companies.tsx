@@ -33,6 +33,11 @@ interface ShippingCompany {
     localFeeSYP: number;
     internationalFeeUSD: number;
   };
+  expressService?: {
+    enabled: boolean;
+    localFeeSYP: number;
+    internationalFeeUSD: number;
+  };
 }
 
 export default function Companies() {
@@ -63,17 +68,21 @@ export default function Companies() {
 
   const getCountryLabel = (codeOrName: string) => {
     const country = getCountryByCode(codeOrName);
-    return country?.name.ar || codeOrName;
+    if (!country) return codeOrName;
+    return language === "ar" ? country.name.ar : country.name.en;
   };
 
   const getStateLabel = (stateCodeOrName: string) => {
     const state = getStateByCode("SY", stateCodeOrName);
-    return state?.name.ar || stateCodeOrName;
+    if (!state) return stateCodeOrName;
+    return language === "ar" ? state.name.ar : state.name.en;
   };
 
   const visibleCompanies = useMemo(() => {
-    return [...companies].sort((a, b) => a.name.localeCompare(b.name, "ar"));
-  }, [companies]);
+    return [...companies].sort((a, b) =>
+      a.name.localeCompare(b.name, language === "ar" ? "ar" : "en"),
+    );
+  }, [companies, language]);
 
   const handleCreateShipment = (company: ShippingCompany) => {
     const preferredType = company.supportsLocal
@@ -178,14 +187,21 @@ export default function Companies() {
                         {tr("دولي", "International")}
                       </Badge>
                     )}
-                    {company.codService?.enabled && (
-                      <Badge className="bg-emerald-100 text-emerald-800 hover:bg-emerald-100">
-                        {tr(
-                          "الدفع عند الاستلام متاح",
-                          "Cash on delivery available",
-                        )}
-                      </Badge>
-                    )}
+                  </div>
+
+                  <div className="rounded-md bg-slate-50 px-3 py-2 text-xs text-slate-700 space-y-1">
+                    <div>
+                      {tr("الشحن السريع", "Express shipping")}:{" "}
+                      {company.expressService?.enabled
+                        ? tr("متاح", "Available")
+                        : tr("لا يوجد", "Not available")}
+                    </div>
+                    <div>
+                      {tr("الدفع عند الاستلام", "Cash on delivery")}:{" "}
+                      {company.codService?.enabled
+                        ? tr("متاح", "Available")
+                        : tr("لا يوجد", "Not available")}
+                    </div>
                   </div>
 
                   <div className="text-xs text-gray-600 space-y-1">

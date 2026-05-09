@@ -111,6 +111,28 @@ interface ShippingCompany {
     localFeeSYP: number;
     internationalFeeUSD: number;
   };
+  packagingService?: {
+    enabled: boolean;
+    localFeeSYP: number;
+    internationalFeeUSD: number;
+  };
+  offers?: Array<{
+    _id?: string;
+    title?: string;
+    localPrice?: number;
+    localPriceSYP?: number;
+    internationalPrice?: number;
+    internationalPriceUSD?: number;
+    codFee?: number;
+    codFeeSYP?: number;
+    codFeeUSD?: number;
+    expressFeeSYP?: number;
+    expressFeeUSD?: number;
+    priority?: number;
+    isActive?: boolean;
+    startAt?: string;
+    endAt?: string;
+  }>;
 }
 
 interface Country {
@@ -120,6 +142,19 @@ interface Country {
 }
 
 const NEW_CONTACT_OPTION = "__new_contact__";
+
+const isOfferActive = (offer?: ShippingCompany["offers"][number]) => {
+  if (!offer?.title || !offer.isActive) return false;
+
+  const now = Date.now();
+  const startAt = offer.startAt ? new Date(offer.startAt).getTime() : null;
+  const endAt = offer.endAt ? new Date(offer.endAt).getTime() : null;
+
+  if (startAt && !Number.isNaN(startAt) && startAt > now) return false;
+  if (endAt && !Number.isNaN(endAt) && endAt < now) return false;
+
+  return true;
+};
 
 const countries: Country[] = [
   {
@@ -160,6 +195,8 @@ export default function CreateShipment() {
   const { refreshUser } = useAuth();
   const operationStatus = useOperationStatus();
   const [isPresetCompanyApplied, setIsPresetCompanyApplied] = useState(false);
+  const [presetCompanyId, setPresetCompanyId] = useState("");
+  const [selectedOfferId, setSelectedOfferId] = useState("");
 
   const [currentStep, setCurrentStep] = useState(1);
   const [shippingType, setShippingType] = useState<"local" | "international">(
@@ -224,6 +261,7 @@ export default function CreateShipment() {
     value: "",
     currency: "SYP" as "USD" | "SYP", // Default to SYP for local shipping
     fragile: false,
+    packagingRequested: false,
 
     // Shipping Info
     shippingCompany: "",
@@ -292,9 +330,12 @@ export default function CreateShipment() {
 
     const companyId = searchParams.get("companyId");
     const shippingTypeParam = searchParams.get("shippingType");
+    const offerOnly = searchParams.get("offerOnly") === "1";
+    const offerId = String(searchParams.get("offerId") || "").trim();
 
     if (!companyId) {
       setIsPresetCompanyApplied(true);
+      setPresetCompanyId("");
       return;
     }
 
@@ -340,6 +381,8 @@ export default function CreateShipment() {
     }
 
     setShippingType(nextShippingType);
+    setPresetCompanyId(company._id);
+    setSelectedOfferId(offerOnly ? offerId : "");
     setFormData((prev) => ({
       ...prev,
       shippingCompany: company._id,
@@ -352,9 +395,15 @@ export default function CreateShipment() {
     const nextParams = new URLSearchParams(searchParams);
     nextParams.delete("companyId");
     nextParams.delete("shippingType");
+    nextParams.delete("offerOnly");
+    nextParams.delete("offerId");
     setSearchParams(nextParams, { replace: true });
 
-    toast.success(`تم اختيار شركة الشحن ${company.name} مسبقا`);
+    toast.success(
+      isRTL
+        ? `تم اختيار شركة الشحن ${company.name} مسبقا`
+        : `Shipping company ${company.name} was preselected`,
+    );
     setIsPresetCompanyApplied(true);
   }, [
     isPresetCompanyApplied,
@@ -392,6 +441,32 @@ export default function CreateShipment() {
           (isRTL ? "فشل تحميل العملاء" : "Failed to load contacts"),
       );
     }
+  };
+
+  const getActiveOffers = (company?: ShippingCompany | null) => {
+    if (!company?.offers?.length) return [];
+
+    return company.offers
+      .filter((offer) => isOfferActive(offer))
+      .sort(
+        (left, right) =>
+          Number(right?.priority || 0) - Number(left?.priority || 0),
+      );
+  };
+
+  const getSelectedOffer = (company?: ShippingCompany | null) => {
+    const activeOffers = getActiveOffers(company);
+    if (!activeOffers.length) return null;
+
+    if (selectedOfferId) {
+      return (
+        activeOffers.find(
+          (offer) => String(offer._id || "") === selectedOfferId,
+        ) || activeOffers[0]
+      );
+    }
+
+    return activeOffers[0];
   };
 
   useEffect(() => {
@@ -435,7 +510,20 @@ export default function CreateShipment() {
     ) {
       setFormData((prev) => ({ ...prev, paymentMethod: "wallet" }));
     }
-  }, [formData.shippingCompany, formData.paymentMethod, shippingCompanies]);
+
+    if (
+      formData.packagingRequested &&
+      selectedCompany &&
+      !selectedCompany.packagingService?.enabled
+    ) {
+      setFormData((prev) => ({ ...prev, packagingRequested: false }));
+    }
+  }, [
+    formData.shippingCompany,
+    formData.paymentMethod,
+    formData.packagingRequested,
+    shippingCompanies,
+  ]);
 
   useEffect(() => {
     return () => {
@@ -452,6 +540,7 @@ export default function CreateShipment() {
         (c) => c._id === formData.shippingCompany,
       );
       if (company) {
+        const selectedOffer = getSelectedOffer(company);
         const actualWeight = parseFloat(formData.weight);
         const volumetricDivisor =
           Number(company.volumetricDivisor) > 0
@@ -470,12 +559,20 @@ export default function CreateShipment() {
         // استخدام الوزن الأكبر (الوزن العادي أو الوزن الحجمي)
         const billingWeight = Math.max(actualWeight, volumetricWeight);
 
-        const pricePerKg =
-          shippingType === "local"
-            ? company.pricing?.localPerKgSYP || 0
-            : company.pricing?.internationalPerKgUSD || 0;
-
-        const totalCost = billingWeight * pricePerKg;
+        const totalCost = selectedOffer
+          ? shippingType === "local"
+            ? Number(
+                selectedOffer.localPriceSYP ?? selectedOffer.localPrice ?? 0,
+              )
+            : Number(
+                selectedOffer.internationalPriceUSD ??
+                  selectedOffer.internationalPrice ??
+                  0,
+              )
+          : billingWeight *
+            (shippingType === "local"
+              ? company.pricing?.localPerKgSYP || 0
+              : company.pricing?.internationalPerKgUSD || 0);
 
         setEstimatedCost(totalCost);
       }
@@ -489,6 +586,7 @@ export default function CreateShipment() {
     shippingType,
     shippingCompanies,
     receivers,
+    selectedOfferId,
   ]);
 
   // Update used contact IDs when receivers change
@@ -516,6 +614,10 @@ export default function CreateShipment() {
 
   const getAvailableCompanies = () => {
     if (receivers.length === 0) return [];
+
+    if (presetCompanyId) {
+      return shippingCompanies.filter((company) => company._id === presetCompanyId);
+    }
 
     const normalizeValue = (value: string) => value.trim().toLowerCase();
 
@@ -778,7 +880,9 @@ export default function CreateShipment() {
 
       if (isLocalAndNonSyrian) {
         toast.warning(
-          "تم اختيار عميل بدولة غير سورية. لأن الشحن محلي تم ضبط الدولة تلقائيا إلى سوريا، يرجى تحديد المحافظة والمدينة من جديد.",
+          isRTL
+            ? "تم اختيار عميل بدولة غير سورية. لأن الشحن محلي تم ضبط الدولة تلقائيا إلى سوريا، يرجى تحديد المحافظة والمدينة من جديد."
+            : "A client from a non-Syrian country was selected. Since shipping is local, country was automatically set to Syria. Please reselect state and city.",
         );
       }
     }
@@ -1175,6 +1279,17 @@ export default function CreateShipment() {
           );
           return false;
         }
+        if (
+          formData.packagingRequested &&
+          !getSelectedCompany()?.packagingService?.enabled
+        ) {
+          toast.error(
+            isRTL
+              ? "خدمة التغليف غير متاحة مع شركة الشحن المحددة"
+              : "Packaging service is not available for the selected shipping company",
+          );
+          return false;
+        }
         if (formData.paymentMethod === "wallet") {
           if (isBalanceLoading) {
             toast.error(
@@ -1203,65 +1318,20 @@ export default function CreateShipment() {
     }
   };
 
-  const nextStep = () => {
-    if (validateStep(currentStep)) {
-      setCurrentStep((prev) => Math.min(prev + 1, 6));
-    }
-  };
-
   const prevStep = () => {
-    setCurrentStep((prev) => Math.max(prev - 1, 1));
+    setCurrentStep((prev) => Math.max(1, prev - 1));
   };
 
-  const simulateShipmentCreation = async () => {
-    await new Promise((resolve) => setTimeout(resolve, 2000));
-
-    if (Math.random() > 0.1) {
+  const nextStep = () => {
+    if (!validateStep(currentStep)) {
       return;
     }
 
-    throw new Error("فشل في إنشاء الشحنة. يرجى المحاولة مرة أخرى.");
+    setCurrentStep((prev) => Math.min(6, prev + 1));
   };
 
   const handleSubmit = async () => {
-    operationStatus.setLoading();
-
     try {
-      await saveContactIfNew(
-        {
-          name: formData.senderName,
-          phone: formData.senderPhone,
-          email: formData.senderEmail,
-          address: formData.senderAddress,
-          street: formData.senderStreet,
-          country: formData.senderCountry,
-          state: formData.senderState,
-          city: formData.senderCity,
-          clientType: formData.senderClientType,
-          companyName: formData.senderCompanyName,
-          commercialRegister: formData.commercialRegister,
-          coordinates: formData.senderCoordinates,
-        },
-        "sender",
-      );
-
-      for (const receiver of receivers) {
-        await saveContactIfNew(
-          {
-            name: receiver.name,
-            phone: receiver.phone,
-            email: receiver.email,
-            address: receiver.address,
-            street: receiver.street,
-            country: receiver.country,
-            state: receiver.state,
-            city: receiver.city,
-            clientType: "individual",
-            coordinates: receiver.coordinates,
-          },
-          "receiver",
-        );
-      }
 
       const selectedVolumetricDivisor = getSelectedVolumetricDivisor();
 
@@ -1302,15 +1372,19 @@ export default function CreateShipment() {
           value: parseFloat(formData.value),
           currency: formData.currency,
           fragile: formData.fragile,
+          packagingRequested: formData.packagingRequested,
         },
         shippingCompany: {
           id: formData.shippingCompany,
           name: getSelectedCompany()?.name || "",
         },
+        offerOnly: Boolean(getSelectedOffer(getSelectedCompany())),
+        offerId: getSelectedOffer(getSelectedCompany())?._id || undefined,
         cost: {
           amount: totalCostWithFees,
           baseAmount: estimatedCost,
           codFee: getCodFee(),
+          packagingFee: getPackagingFee(),
           currency: formData.currency,
           paymentMethod: formData.paymentMethod,
           volumetricWeight:
@@ -1396,6 +1470,24 @@ export default function CreateShipment() {
   };
 
   const getCompanyPriceLabel = (company: ShippingCompany) => {
+    const selectedOffer =
+      company._id === formData.shippingCompany
+        ? getSelectedOffer(company)
+        : null;
+
+    if (selectedOffer) {
+      const amount =
+        shippingType === "local"
+          ? Number(selectedOffer.localPriceSYP ?? selectedOffer.localPrice ?? 0)
+          : Number(
+              selectedOffer.internationalPriceUSD ??
+                selectedOffer.internationalPrice ??
+                0,
+            );
+
+      return formatAmount(amount, formData.currency);
+    }
+
     const amount =
       shippingType === "local"
         ? company.pricing?.localPerKgSYP || 0
@@ -1452,6 +1544,10 @@ export default function CreateShipment() {
       return;
     }
 
+    if (company._id !== formData.shippingCompany) {
+      setSelectedOfferId("");
+    }
+
     setFormData((prev) => ({
       ...prev,
       shippingCompany: company._id,
@@ -1460,8 +1556,19 @@ export default function CreateShipment() {
 
   const getCodFee = () => {
     const company = getSelectedCompany();
+    const selectedOffer = getSelectedOffer(company);
 
-    if (!company?.codService?.enabled || formData.paymentMethod !== "cod") {
+    if (formData.paymentMethod !== "cod") {
+      return 0;
+    }
+
+    if (selectedOffer) {
+      return shippingType === "local"
+        ? Number(selectedOffer.codFeeSYP ?? selectedOffer.codFee ?? 0)
+        : Number(selectedOffer.codFeeUSD || 0);
+    }
+
+    if (!company?.codService?.enabled) {
       return 0;
     }
 
@@ -1470,7 +1577,22 @@ export default function CreateShipment() {
       : company.codService.internationalFeeUSD || 0;
   };
 
-  const totalCostWithFees = estimatedCost + getCodFee();
+  const getPackagingFee = () => {
+    if (!formData.packagingRequested) {
+      return 0;
+    }
+
+    const company = getSelectedCompany();
+    if (!company?.packagingService?.enabled) {
+      return 0;
+    }
+
+    return shippingType === "local"
+      ? Number(company.packagingService.localFeeSYP || 0)
+      : Number(company.packagingService.internationalFeeUSD || 0);
+  };
+
+  const totalCostWithFees = estimatedCost + getCodFee() + getPackagingFee();
 
   const getPackageTypeLabel = (type: string) => {
     const typeKey = `package.${type}`;
@@ -1491,6 +1613,14 @@ export default function CreateShipment() {
   const getClientTypeIcon = (type: "individual" | "merchant") => {
     return type === "individual" ? User : Building;
   };
+
+  const selectedCompany = getSelectedCompany();
+  const allowedShippingTypes = selectedCompany
+    ? [
+        selectedCompany.supportsLocal ? ("local" as const) : null,
+        selectedCompany.supportsInternational ? ("international" as const) : null,
+      ].filter(Boolean) as Array<"local" | "international">
+    : ["local", "international"];
 
   const steps = [
     { number: 1, title: t("shipment.step1.title") },
@@ -1558,72 +1688,72 @@ export default function CreateShipment() {
                 </div>
 
                 <div className="grid grid-cols-1 gap-6 max-w-2xl mx-auto md:grid-cols-2">
-                  <div
-                    className={`p-6 border-2 rounded-xl cursor-pointer transition-all hover:shadow-md ${
-                      shippingType === "local"
-                        ? "border-blue-600 bg-blue-50"
-                        : "border-gray-200 hover:border-gray-300"
-                    }`}
-                    onClick={() => setShippingType("local")}
-                  >
-                    <div className="text-center">
-                      <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                        <MapPin className="w-8 h-8 text-blue-600" />
-                      </div>
-                      <h4 className="text-lg font-semibold text-gray-900 mb-2">
-                        {t("shipment.local")}
-                      </h4>
-                      <p className="text-gray-600 text-sm mb-3">
-                        {t("shipment.localDesc")}
-                      </p>
-                      <p className="text-blue-600 text-sm font-medium">
-                        {
-                          shippingCompanies.filter(
-                            (company) => company.supportsLocal,
-                          ).length
-                        }{" "}
-                        {t("shipment.companiesAvailable")}
-                      </p>
-                      <p className="text-xs text-gray-500 mt-1">
-                        {isBalanceLoading
-                          ? "جاري تحميل الرصيد..."
-                          : `${formatAmount(userBalance.USD, "USD")} | ${formatAmount(userBalance.SYP, "SYP")}`}
-                      </p>
-                    </div>
-                  </div>
+                  {allowedShippingTypes.map((type) => {
+                    const isSelected = shippingType === type;
+                    const isLocal = type === "local";
 
-                  <div
-                    className={`p-6 border-2 rounded-xl cursor-pointer transition-all hover:shadow-md ${
-                      shippingType === "international"
-                        ? "border-blue-600 bg-blue-50"
-                        : "border-gray-200 hover:border-gray-300"
-                    }`}
-                    onClick={() => setShippingType("international")}
-                  >
-                    <div className="text-center">
-                      <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                        <Globe className="w-8 h-8 text-green-600" />
+                    return (
+                      <div
+                        key={type}
+                        className={`p-6 border-2 rounded-xl cursor-pointer transition-all hover:shadow-md ${
+                          isSelected
+                            ? "border-blue-600 bg-blue-50"
+                            : "border-gray-200 hover:border-gray-300"
+                        }`}
+                        onClick={() => setShippingType(type)}
+                      >
+                        <div className="text-center">
+                          <div
+                            className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 ${
+                              isLocal ? "bg-blue-100" : "bg-green-100"
+                            }`}
+                          >
+                            {isLocal ? (
+                              <MapPin className="w-8 h-8 text-blue-600" />
+                            ) : (
+                              <Globe className="w-8 h-8 text-green-600" />
+                            )}
+                          </div>
+                          <h4 className="text-lg font-semibold text-gray-900 mb-2">
+                            {isLocal ? t("shipment.local") : t("shipment.international")}
+                          </h4>
+                          <p className="text-gray-600 text-sm mb-3">
+                            {isLocal
+                              ? t("shipment.localDesc")
+                              : t("shipment.internationalDesc")}
+                          </p>
+                          <p className="text-sm font-medium text-blue-600">
+                            {shippingCompanies.filter((company) =>
+                              isLocal ? company.supportsLocal : company.supportsInternational,
+                            ).length} {t("shipment.companiesAvailable")}
+                          </p>
+                          <p className="text-xs text-gray-500 mt-1">
+                            {isLocal
+                              ? isBalanceLoading
+                                ? "جاري تحميل الرصيد..."
+                                : `${formatAmount(userBalance.USD, "USD")} | ${formatAmount(userBalance.SYP, "SYP")}`
+                              : isRTL
+                                ? "الدفع بالدولار الأمريكي"
+                                : "Payment in US Dollar"}
+                          </p>
+                        </div>
                       </div>
-                      <h4 className="text-lg font-semibold text-gray-900 mb-2">
-                        {t("shipment.international")}
-                      </h4>
-                      <p className="text-gray-600 text-sm mb-3">
-                        {t("shipment.internationalDesc")}
-                      </p>
-                      <p className="text-green-600 text-sm font-medium">
-                        {
-                          shippingCompanies.filter(
-                            (company) => company.supportsInternational,
-                          ).length
-                        }{" "}
-                        {t("shipment.companiesAvailable")}
-                      </p>
-                      <p className="text-xs text-gray-500 mt-2">
-                        الدفع بالدولار الأمريكي
-                      </p>
-                    </div>
-                  </div>
+                    );
+                  })}
                 </div>
+
+                {selectedCompany && allowedShippingTypes.length === 1 ? (
+                  <div className="max-w-2xl mx-auto rounded-xl border border-slate-200 bg-slate-50 p-4 text-center text-sm text-slate-700">
+                    <p className="font-semibold text-slate-900">
+                      {selectedCompany.name}
+                    </p>
+                    <p className="mt-1">
+                      {allowedShippingTypes[0] === "local"
+                        ? t("shipment.local")
+                        : t("shipment.international")}
+                    </p>
+                  </div>
+                ) : null}
               </div>
             )}
 
@@ -1633,8 +1763,9 @@ export default function CreateShipment() {
                   <Label>{t("sender.selectFromContacts")}</Label>
                   {shippingType === "local" && (
                     <p className="text-xs text-amber-700 mt-1">
-                      ملاحظة: عند اختيار عميل بدولة غير سورية سيتم ضبط الدولة
-                      تلقائيا إلى سوريا للشحن المحلي.
+                      {isRTL
+                        ? "ملاحظة: عند اختيار عميل بدولة غير سورية سيتم ضبط الدولة تلقائيا إلى سوريا للشحن المحلي."
+                        : "Note: When selecting a client from a country other than Syria, the country will be automatically set to Syria for local shipping."}
                     </p>
                   )}
                   <Select
@@ -1999,8 +2130,9 @@ export default function CreateShipment() {
                           <Label>{t("sender.selectFromContacts")}</Label>
                           {shippingType === "local" && (
                             <p className="text-xs text-amber-700 mt-1">
-                              ملاحظة: في الشحن المحلي، الدولة تكون سوريا فقط
-                              وسيتم تنبيهك عند اختلاف بيانات العميل.
+                              {isRTL
+                                ? "ملاحظة: في الشحن المحلي، الدولة تكون سوريا فقط وسيتم تنبيهك عند اختلاف بيانات العميل."
+                                : "Note: For local shipping, the country must be Syria only, and you will be alerted if client data differs."}
                             </p>
                           )}
                           <Select
@@ -2493,6 +2625,24 @@ export default function CreateShipment() {
                                   الدفع عند الاستلام غير متاح
                                 </p>
                               )}
+
+                              {company.packagingService?.enabled ? (
+                                <p className="text-xs text-blue-700 mt-1">
+                                  خدمة التغليف متاحة برسوم{" "}
+                                  {formatAmount(
+                                    shippingType === "local"
+                                      ? company.packagingService.localFeeSYP ||
+                                          0
+                                      : company.packagingService
+                                          .internationalFeeUSD || 0,
+                                    formData.currency,
+                                  )}
+                                </p>
+                              ) : (
+                                <p className="text-xs text-slate-500 mt-1">
+                                  خدمة التغليف غير متاحة
+                                </p>
+                              )}
                             </div>
                           </div>
                           {company.supportsLocal &&
@@ -2581,6 +2731,16 @@ export default function CreateShipment() {
                           </span>
                           <span className="font-semibold text-blue-900">
                             {formatAmount(getCodFee(), formData.currency)}
+                          </span>
+                        </div>
+                      )}
+                      {getPackagingFee() > 0 && (
+                        <div className="flex items-center justify-between text-sm mb-2">
+                          <span className="text-blue-900">
+                            {t("package.packagingFee")}
+                          </span>
+                          <span className="font-semibold text-blue-900">
+                            {formatAmount(getPackagingFee(), formData.currency)}
                           </span>
                         </div>
                       )}
@@ -2688,6 +2848,54 @@ export default function CreateShipment() {
                       </Label>
                     </div>
                   </RadioGroup>
+                </div>
+
+                <div>
+                  <Label className="text-base font-medium">
+                    {t("package.packagingRequested")}
+                  </Label>
+                  <div
+                    className={`mt-3 rounded-lg border p-3 ${
+                      getSelectedCompany() &&
+                      !getSelectedCompany()?.packagingService?.enabled
+                        ? "opacity-60"
+                        : ""
+                    }`}
+                  >
+                    <div className="flex items-center space-x-2 space-x-reverse">
+                      <input
+                        type="checkbox"
+                        id="packagingRequestedStep5"
+                        checked={formData.packagingRequested}
+                        disabled={
+                          !!getSelectedCompany() &&
+                          !getSelectedCompany()?.packagingService?.enabled
+                        }
+                        onChange={(e) =>
+                          setFormData((prev) => ({
+                            ...prev,
+                            packagingRequested: e.target.checked,
+                          }))
+                        }
+                        className="rounded border-gray-300"
+                      />
+                      <Label
+                        htmlFor="packagingRequestedStep5"
+                        className="cursor-pointer"
+                      >
+                        {t("package.packagingRequested")}
+                      </Label>
+                    </div>
+
+                    <p className="mt-2 text-sm text-gray-600">
+                      {getSelectedCompany() &&
+                      !getSelectedCompany()?.packagingService?.enabled
+                        ? isRTL
+                          ? "خدمة التغليف غير متاحة في الشركة المحددة"
+                          : "Packaging service is not available for the selected company"
+                        : `${t("package.packagingFee")}: ${formatAmount(getPackagingFee(), formData.currency)}`}
+                    </p>
+                  </div>
                 </div>
 
                 <div>
@@ -2876,6 +3084,16 @@ export default function CreateShipment() {
                           </span>
                         </div>
                       )}
+                      {formData.packagingRequested && (
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">
+                            {t("package.packaging")}:
+                          </span>
+                          <span className="font-medium text-blue-700">
+                            {t("common.yes")}
+                          </span>
+                        </div>
+                      )}
                       <div className="pt-2 border-t">
                         <span className="text-gray-600 text-sm">
                           {t("package.description")}:
@@ -3025,6 +3243,24 @@ export default function CreateShipment() {
                           {formData.weight} kg
                         </span>
                       </div>
+                      {getCodFee() > 0 && (
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">COD:</span>
+                          <span className="font-medium">
+                            {formatAmount(getCodFee(), formData.currency)}
+                          </span>
+                        </div>
+                      )}
+                      {getPackagingFee() > 0 && (
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">
+                            {t("package.packagingFee")}:
+                          </span>
+                          <span className="font-medium">
+                            {formatAmount(getPackagingFee(), formData.currency)}
+                          </span>
+                        </div>
+                      )}
                       <div className="flex justify-between pt-3 border-t">
                         <span className="text-lg font-semibold">
                           {t("shipment.totalCost")}:
