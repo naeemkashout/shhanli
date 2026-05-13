@@ -60,31 +60,38 @@ interface RegisterData {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
+  const [user, setUser] = useState<User | null>(() => {
+    const storedUser = localStorage.getItem("kashout_user");
+    return storedUser ? (JSON.parse(storedUser) as User) : null;
+  });
+  const [isLoading, setIsLoading] = useState(true);
   const tr = (ar: string, en: string) =>
     ((localStorage.getItem("language") as "ar" | "en") || "ar") === "ar"
       ? ar
       : en;
 
   useEffect(() => {
-    // Check for stored user data and validate token
     const initAuth = async () => {
+      setIsLoading(true);
       const storedUser = localStorage.getItem("kashout_user");
       const token = localStorage.getItem("kashout_token");
 
       if (storedUser && token) {
         try {
-          // Validate token by fetching current user
           const userData = await authService.getMe();
           setUser(userData);
+          localStorage.setItem("kashout_user", JSON.stringify(userData));
         } catch (error) {
-          // Token invalid, clear storage
           localStorage.removeItem("kashout_user");
           localStorage.removeItem("kashout_token");
           localStorage.removeItem("kashout_refresh_token");
+          setUser(null);
         }
+      } else {
+        setUser(null);
       }
+
+      setIsLoading(false);
     };
 
     initAuth();
@@ -250,7 +257,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       throw new Error(tr("فشل تغيير كلمة المرور", "Failed to change password"));
     } catch (error: any) {
       throw new Error(
-        error.message || tr("فشل تغيير كلمة المرور", "Failed to change password"),
+        error.message ||
+          tr("فشل تغيير كلمة المرور", "Failed to change password"),
       );
     } finally {
       setIsLoading(false);
@@ -314,7 +322,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             errorMessage =
               error.response.data.message ||
               error.message ||
-              tr("فشل في إرسال رابط إعادة التعيين", "Failed to send reset link");
+              tr(
+                "فشل في إرسال رابط إعادة التعيين",
+                "Failed to send reset link",
+              );
         }
       } else {
         errorMessage =
