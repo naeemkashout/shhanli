@@ -942,10 +942,21 @@ export default function CompaniesManagement() {
         tr("تم رفع شعار الشركة بنجاح", "Company logo uploaded successfully"),
       );
     } catch (error: any) {
-      toast.error(
-        error.message ||
-          tr("فشل رفع شعار الشركة", "Failed to upload company logo"),
-      );
+      console.error("Logo upload error:", error);
+      // Try to fall back to a local preview (data URL) so the owner sees the logo immediately,
+      // even if the server upload failed (network/server issue). This does not persist server-side.
+      try {
+        const dataUrl = await readFileAsDataUrl(file);
+        setFormData((prev) => ({ ...prev, logoUrl: dataUrl }));
+        toast.error(
+          (error?.message || tr("فشل رفع شعار الشركة", "Failed to upload company logo")) +
+            " — عرض الصورة محليًا فقط",
+        );
+      } catch (readErr) {
+        toast.error(
+          error.message || tr("فشل رفع شعار الشركة", "Failed to upload company logo"),
+        );
+      }
     } finally {
       setIsUploadingLogo(false);
       event.target.value = "";

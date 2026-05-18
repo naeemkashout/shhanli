@@ -651,7 +651,7 @@ exports.getAllShipments = async (req, res) => {
       limit = 10,
     } = req.query;
 
-    const filters: any[] = [];
+    const filters = [];
 
     if (status) filters.push({ status });
 
@@ -692,7 +692,7 @@ exports.getAllShipments = async (req, res) => {
     }
 
     if (startDate || endDate) {
-      const dateRange: any = {};
+      const dateRange = {};
       if (startDate) {
         const parsed = new Date(String(startDate));
         if (!Number.isNaN(parsed.getTime())) {

@@ -9,6 +9,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
   DialogContent,
@@ -61,6 +62,7 @@ export default function Balance() {
     useState<DepositProvider>("paymera");
   const [depositOtp, setDepositOtp] = useState("");
   const [depositStatusText, setDepositStatusText] = useState("");
+  const [depositResponseData, setDepositResponseData] = useState<any>(null);
   const [isCheckingDeposit, setIsCheckingDeposit] = useState(false);
   const [isSubmittingDeposit, setIsSubmittingDeposit] = useState(false);
   const [isResendingDepositOtp, setIsResendingDepositOtp] = useState(false);
@@ -143,6 +145,36 @@ export default function Balance() {
     return `${t("dollarSymbol")}${amount.toFixed(2)}`;
   };
 
+  const getDepositResponseBadge = (status?: string) => {
+    const normalized = String(status || "").toLowerCase();
+
+    if (["completed", "success"].includes(normalized)) {
+      return {
+        label: language === "ar" ? "مكتمل" : "Completed",
+        variant: "default" as const,
+      };
+    }
+
+    if (["failed", "cancelled", "error"].includes(normalized)) {
+      return {
+        label: language === "ar" ? "فشل" : "Failed",
+        variant: "destructive" as const,
+      };
+    }
+
+    if (["pending", "waiting", ""].includes(normalized) || !normalized) {
+      return {
+        label: language === "ar" ? "قيد الانتظار" : "Pending",
+        variant: "secondary" as const,
+      };
+    }
+
+    return {
+      label: String(status),
+      variant: "outline" as const,
+    };
+  };
+
   const getMinDepositAmount = (currency: Currency) => {
     return currency === "SYP" ? 50000 : 10;
   };
@@ -165,6 +197,7 @@ export default function Balance() {
     setActiveDepositProvider("paymera");
     setDepositOtp("");
     setDepositStatusText("");
+    setDepositResponseData(null);
   };
 
   const checkActiveDepositStatus = async () => {
@@ -201,11 +234,11 @@ export default function Balance() {
         resetDepositFlow();
       }
     } catch (error: any) {
+      console.error("checkActiveDepositStatus error:", error);
       toast.error(
-        error.message ||
-          (language === "ar"
-            ? "تعذر التحقق من حالة الدفع"
-            : "Failed to verify payment status"),
+        language === "ar"
+          ? "تعذر التحقق من حالة الدفع. حاول مرة أخرى لاحقًا"
+          : "Failed to verify payment status. Please try again later",
       );
     } finally {
       setIsCheckingDeposit(false);
@@ -258,13 +291,16 @@ export default function Balance() {
         provider: depositProvider,
       });
 
+      console.log("deposit response:", response);
+
+      const depositResponse = response?.data || response;
+      setDepositResponseData(depositResponse);
+
       const transactionId = String(
-        response?.data?.transactionId || response?.data?.paymentId || "",
+        depositResponse?.transactionId || depositResponse?.paymentId || "",
       );
-      const paymentUrl = String(response?.data?.paymentUrl || "");
-      const createdProvider = String(
-        response?.data?.provider || depositProvider,
-      );
+      const paymentUrl = String(depositResponse?.paymentUrl || "");
+      const createdProvider = String(depositResponse?.provider || depositProvider);
 
       if (!transactionId) {
         toast.error(
@@ -278,7 +314,17 @@ export default function Balance() {
       setActivePaymentId(transactionId);
       setActiveDepositProvider(createdProvider as DepositProvider);
 
-      if (createdProvider === "paymera" && paymentUrl) {
+      if (createdProvider === "paymera") {
+        if (!paymentUrl) {
+          console.error("Paymera provider returned no paymentUrl", response);
+          toast.error(
+            language === "ar"
+              ? "بوابة Paymera لم ترجع رابط الدفع. تحقق من سجلات الخادم."
+              : "Paymera gateway did not return a payment URL. Check server logs.",
+          );
+          return;
+        }
+        
         setDepositStatusText(language === "ar" ? "بانتظار الدفع" : "pending");
         toast.success(
           language === "ar"
@@ -426,7 +472,7 @@ export default function Balance() {
   };
 
   return (
-    <div className={`container mx-auto p-6 space-y-6 ${isRTL ? "rtl" : "ltr"}`}>
+    <div className={`container mx-auto p-4 space-y-4 ${isRTL ? "rtl" : "ltr"}`}>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <Card className="bg-gradient-to-r from-emerald-600 to-teal-600 text-white">
           <CardHeader>
@@ -637,6 +683,82 @@ export default function Balance() {
                   ) : null}
                 </CardContent>
               </Card>
+
+              {depositResponseData && activeDepositProvider === "paymera" ? (
+                <Card className="border-slate-200 bg-slate-50">
+                  <CardHeader>
+                    <CardTitle>
+                      {language === "ar" ? "بيانات بايميرا" : "Paymera Data"}
+                    </CardTitle>
+                    <CardDescription>
+                      {language === "ar"
+                        ? "الاستجابة من بوابة بايميرا"
+                        : "Response returned from Paymera"}
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="flex flex-wrap items-center gap-2 mb-3">
+                      <Badge
+                        variant={
+                          getDepositResponseBadge(
+                            depositResponseData?.status ||
+                              depositResponseData?.gatewayStatus,
+                          ).variant
+                        }
+                      >
+                        {
+                          getDepositResponseBadge(
+                            depositResponseData?.status ||
+                              depositResponseData?.gatewayStatus,
+                          ).label
+                        }
+                      </Badge>
+                      <span className="text-sm text-slate-700">
+                        {language === "ar"
+                          ? "تم وضع علامة بناءً على بيانات الاستجابة."
+                          : "Marked according to response data."}
+                      </span>
+                    </div>
+                    <div className="grid gap-2 text-sm text-slate-700 mb-3">
+                      {depositResponseData?.transactionId ? (
+                        <div>
+                          <strong>
+                            {language === "ar" ? "رقم العملية:" : "Transaction ID:"}
+                          </strong>{" "}
+                          {depositResponseData.transactionId}
+                        </div>
+                      ) : null}
+                      {depositResponseData?.paymentId ? (
+                        <div>
+                          <strong>
+                            {language === "ar" ? "رقم الدفع:" : "Payment ID:"}
+                          </strong>{" "}
+                          {depositResponseData.paymentId}
+                        </div>
+                      ) : null}
+                      {depositResponseData?.paymentUrl ? (
+                        <div className="break-all">
+                          <strong>
+                            {language === "ar" ? "رابط الدفع:" : "Payment URL:"}
+                          </strong>{" "}
+                          {depositResponseData.paymentUrl}
+                        </div>
+                      ) : null}
+                      {depositResponseData?.status ? (
+                        <div>
+                          <strong>
+                            {language === "ar" ? "حالة الاستجابة:" : "Response status:"}
+                          </strong>{" "}
+                          {depositResponseData.status}
+                        </div>
+                      ) : null}
+                    </div>
+                    <pre className="whitespace-pre-wrap rounded border border-slate-200 bg-slate-900/5 p-3 text-xs text-slate-800 overflow-x-auto">
+                      {JSON.stringify(depositResponseData, null, 2)}
+                    </pre>
+                  </CardContent>
+                </Card>
+              ) : null}
 
               {activePaymentId && activeDepositProvider === "syriatel-cash" ? (
                 <div className="space-y-4 rounded-lg border border-blue-200 bg-white p-4">

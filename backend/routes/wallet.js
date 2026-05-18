@@ -5,6 +5,7 @@ const {
   getBalance,
   deposit,
   checkDepositStatus,
+  paymeraCallback,
   confirmDeposit,
   resendDepositOtp,
   cancelDeposit,
@@ -16,6 +17,8 @@ const {
 
 router.get("/balance", protect, getBalance);
 router.post("/deposit", protect, deposit);
+// Paymera callback (public endpoint used by Paymera gateway)
+router.all("/paymera/callback", paymeraCallback);
 router.get("/deposit/status/:paymentId", protect, checkDepositStatus);
 router.post("/deposit/confirm", protect, confirmDeposit);
 router.post("/deposit/resend-otp", protect, resendDepositOtp);

@@ -1333,7 +1333,7 @@ export default function CreateShipment() {
   };
 
   const handleSubmit = async () => {
-    try {
+    await operationStatus.executeOperation(async () => {
       const selectedVolumetricDivisor = getSelectedVolumetricDivisor();
 
       const shipmentData = {
@@ -1410,10 +1410,8 @@ export default function CreateShipment() {
       await loadContacts();
       await refreshUser();
 
-      operationStatus.setSuccess();
-    } catch (error: any) {
-      operationStatus.setError(error?.message || t("shipment.createError"));
-    }
+      return true;
+    });
   };
 
   const handleOperationSuccess = () => {

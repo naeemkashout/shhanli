@@ -31,11 +31,15 @@ import {
   Download,
   Eye,
   Filter,
+  Loader2,
   Minus,
   Plus,
+  Printer,
   Search,
   XCircle,
 } from "lucide-react";
+import { jsPDF } from "jspdf";
+import html2canvas from "html2canvas";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { toast } from "sonner";
 import walletService from "@/services/walletService";
@@ -76,6 +80,7 @@ export default function FinancialTransactions() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isExporting, setIsExporting] = useState(false);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [selectedTransaction, setSelectedTransaction] =
     useState<Transaction | null>(null);
   const [isTransactionDetailsOpen, setIsTransactionDetailsOpen] =
@@ -272,6 +277,20 @@ export default function FinancialTransactions() {
     return method || "-";
   };
 
+  const getStatusLabelText = (status: string) => {
+    const statusLabels: Record<string, { ar: string; en: string }> = {
+      completed: { ar: "مكتملة", en: "Completed" },
+      pending: { ar: "معلقة", en: "Pending" },
+      failed: { ar: "فاشلة", en: "Failed" },
+      cancelled: { ar: "ملغاة", en: "Cancelled" },
+    };
+    return statusLabels[status]
+      ? isRTL
+        ? statusLabels[status].ar
+        : statusLabels[status].en
+      : status;
+  };
+
   const getNotesLabel = (notes?: string) => {
     const raw = String(notes || "").trim();
     if (!raw) return "-";
@@ -313,9 +332,224 @@ export default function FinancialTransactions() {
       .replace(
         /Deposit to wallet/gi,
         isRTL ? "إيداع في المحفظة" : "Deposit to wallet",
+      )
+      .replace(
+        /Paymera eGate deposit completed/gi,
+        isRTL ? "اكتمل الإيداع عبر Paymera eGate" : "Paymera eGate deposit completed",
+      )
+      .replace(
+        /Paymera eGate deposit pending/gi,
+        isRTL ? "الإيداع عبر Paymera eGate قيد الانتظار" : "Paymera eGate deposit pending",
+      )
+      .replace(
+        /Paymera eGate deposit failed/gi,
+        isRTL ? "فشل الإيداع عبر Paymera eGate" : "Paymera eGate deposit failed",
+      )
+      .replace(
+        /Transaction Id:/gi,
+        isRTL ? "رقم المعاملة:" : "Transaction Id:",
+      )
+      .replace(
+        /Transaction ID:/gi,
+        isRTL ? "رقم المعاملة:" : "Transaction ID:",
+      )
+      .replace(
+        /RRN:/gi,
+        isRTL ? "RRN:" : "RRN:",
       );
 
     return translated;
+  };
+
+  const handleDownloadTransaction = async (transaction: Transaction) => {
+    setDownloadingId(transaction.id);
+    try {
+        const fontLink = "https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700&display=swap";
+        const dir = isRTL ? "rtl" : "ltr";
+        const companyName = isRTL ? "شحنلي" : "ShipMe";
+        const logoSrc = "/uploads/company-logos/logo.png"; // adjust if you have another path
+
+        const fallbackLogo = '/uploads/company-logos/company-logo-1775549911206-358053182.jpg';
+        const html = `
+          <div lang="${language}" dir="${dir}" style="font-family: 'Tajawal', Arial, Helvetica, sans-serif; direction: ${dir}; padding:24px; background:#fff; color:#0f172a; width:800px; max-width:800px;">
+            <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:20px;">
+              <div style="display:flex; align-items:center; gap:12px;">
+                <span style="display:inline-flex; align-items:center; justify-content:center; width:34px; height:34px; background:#0f172a; border-radius:10px;">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="18" height="18">
+                    <path d="M3 7l9-4 9 4v10l-9 4-9-4V7z" />
+                    <path d="M3 7l9 4 9-4" />
+                    <path d="M12 3v18" />
+                  </svg>
+                </span>
+                <div style="font-weight:800; font-size:22px; color:#0f172a;">${companyName}</div>
+              </div>
+              <div style="text-align:${isRTL ? 'left' : 'right'}; font-size:12px; color:#64748b;">${new Date().toLocaleString()}</div>
+            </div>
+            <hr style="margin:0 0 20px 0; border:none; height:1px; background:#e6eef8;" />
+            <h2 style="margin:0 0 22px 0; font-size:20px; font-weight:700;">${isRTL ? 'تفاصيل المعاملة' : 'Transaction Details'}</h2>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:20px; align-items:start;">
+              <div style="text-align:${isRTL ? 'right' : 'left'};">
+                <div style="color:#64748b; font-size:12px; font-weight:700;">${isRTL ? 'النوع' : 'Type'}</div>
+                <div style="margin-top:8px; font-weight:600; font-size:14px;">${getTypeLabel(transaction.type)}</div>
+              </div>
+              <div style="text-align:${isRTL ? 'right' : 'left'};">
+                <div style="color:#64748b; font-size:12px; font-weight:700;">${isRTL ? 'المبلغ' : 'Amount'}</div>
+                <div style="margin-top:8px; font-weight:800; color:#059669; font-size:14px;">${transaction.type === 'deposit' || transaction.type === 'refund' ? '+' : '-'}${formatCurrency(transaction.amount, transaction.currency)}</div>
+                <div style="font-size:12px; color:#64748b; margin-top:4px;">${getCurrencyLabel(transaction.currency)}</div>
+              </div>
+              <div style="text-align:${isRTL ? 'right' : 'left'};">
+                <div style="color:#64748b; font-size:12px; font-weight:700;">${isRTL ? 'الحالة' : 'Status'}</div>
+                <div style="margin-top:8px;">
+                  <span style="display:inline-flex; align-items:center; justify-content:center; min-width:120px; height:44px; background:#0f172a; color:#fff; padding:0 18px; border-radius:9999px; font-size:12px; text-align:center; white-space:nowrap;">${getStatusLabelText(transaction.status)}</span>
+                </div>
+              </div>
+              <div style="text-align:${isRTL ? 'right' : 'left'};">
+                <div style="color:#64748b; font-size:12px; font-weight:700;">${isRTL ? 'الطريقة' : 'Method'}</div>
+                <div style="margin-top:8px; font-weight:600; font-size:14px;">${getMethodLabel(transaction.method)}</div>
+              </div>
+              <div style="text-align:${isRTL ? 'right' : 'left'};">
+                <div style="color:#64748b; font-size:12px; font-weight:700;">${isRTL ? 'التاريخ' : 'Date'}</div>
+                <div style="margin-top:8px; font-size:14px;">${transaction.date}</div>
+              </div>
+              <div style="text-align:${isRTL ? 'right' : 'left'};">
+                <div style="color:#64748b; font-size:12px; font-weight:700;">${isRTL ? 'المرجع' : 'Reference'}</div>
+                <div style="margin-top:8px; font-family:monospace; font-size:13px;">${transaction.reference || '-'}</div>
+              </div>
+            </div>
+            ${transaction.notes ? `<div style="margin-top:24px; text-align:${isRTL ? 'right' : 'left'};"><div style="color:#64748b; font-size:12px; font-weight:700;">${isRTL ? 'ملاحظات' : 'Notes'}</div><div style="margin-top:8px; background:#f1f5f9; padding:14px 18px; border-radius:12px; min-height:64px; display:flex; align-items:center; text-align:${isRTL ? 'right' : 'left'};">${getNotesLabel(transaction.notes)}</div></div>` : ''}
+          </div>
+        `;
+
+        const container = document.createElement('div');
+        container.style.position = 'fixed';
+        container.style.left = '-9999px';
+        container.lang = language;
+        container.dir = dir;
+        container.innerHTML = `<link href="${fontLink}" rel="stylesheet">` + html;
+        document.body.appendChild(container);
+
+        await (document as any).fonts?.ready;
+
+        const canvas = await html2canvas(container, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
+        const imgData = canvas.toDataURL('image/png');
+        const pdf = new jsPDF('p', 'mm', 'a4');
+        const pageWidth = pdf.internal.pageSize.getWidth();
+        const pageHeight = pdf.internal.pageSize.getHeight();
+        const imgProps = (pdf as any).getImageProperties(imgData);
+        const imgWidth = pageWidth - 20; // 10mm margin
+        const imgHeight = (imgProps.height * imgWidth) / imgProps.width;
+        let heightLeft = imgHeight;
+        let position = 10;
+
+        pdf.addImage(imgData, 'PNG', 10, position, imgWidth, imgHeight);
+        heightLeft -= pageHeight - 20;
+
+        while (heightLeft > 0) {
+          position = heightLeft - imgHeight;
+          pdf.addPage();
+          pdf.addImage(imgData, 'PNG', 10, position, imgWidth, imgHeight);
+          heightLeft -= pageHeight - 20;
+        }
+
+        pdf.save(`transaction-${transaction.id}.pdf`);
+        document.body.removeChild(container);
+        toast.success(isRTL ? 'تم تنزيل البوليصة' : 'Downloaded PDF');
+    } catch (e: any) {
+      toast.error(isRTL ? 'فشل تنزيل البوليصة' : 'Failed to download PDF');
+    } finally {
+      setDownloadingId(null);
+    }
+  };
+
+  const handlePrintTransaction = (transaction: Transaction) => {
+    try {
+      const dir = isRTL ? "rtl" : "ltr";
+      const fontLink = "https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700&display=swap";
+      const companyName = isRTL ? "شحنلي" : "ShipMe";
+      const logoSrc = "/uploads/company-logos/logo.png";
+      const fallbackLogo = '/uploads/company-logos/company-logo-1775549911206-358053182.jpg';
+      const html = `
+        <html lang="${language}" dir="${dir}">
+          <head>
+            <meta charset="utf-8" />
+            <title>${isRTL ? "تفاصيل المعاملة" : "Transaction Details"}</title>
+            <link href="${fontLink}" rel="stylesheet">
+            <style>
+              body { font-family: 'Tajawal', Arial, Helvetica, sans-serif; padding:24px; direction:${dir}; color:#0f172a; }
+              .wrapper { width:800px; max-width:800px; }
+              .header { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:20px; }
+              .title { margin:0 0 22px 0; font-size:20px; font-weight:700; }
+              .grid { display:grid; grid-template-columns:1fr 1fr; gap:20px; align-items:start; }
+              .field { text-align:${isRTL ? 'right' : 'left'}; }
+              .field-label { color:#64748b; font-size:12px; font-weight:700; }
+              .field-value { margin-top:8px; font-weight:600; font-size:14px; }
+              .badge { display:inline-flex; align-items:center; justify-content:center; min-width:120px; height:44px; background:#0f172a; color:#fff; padding:0 18px; border-radius:9999px; font-size:12px; text-align:center; white-space:nowrap; }
+              .notes-box { margin-top:8px; background:#f1f5f9; padding:14px 18px; border-radius:12px; min-height:64px; display:flex; align-items:center; text-align:${isRTL ? 'right' : 'left'}; }
+            </style>
+          </head>
+          <body>
+            <div class="wrapper">
+              <div class="header">
+                <div style="display:flex; align-items:center; gap:12px;">
+                  <span style="display:inline-flex; align-items:center; justify-content:center; width:34px; height:34px; background:#0f172a; border-radius:10px;">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="18" height="18">
+                      <path d="M3 7l9-4 9 4v10l-9 4-9-4V7z" />
+                      <path d="M3 7l9 4 9-4" />
+                      <path d="M12 3v18" />
+                    </svg>
+                  </span>
+                  <div style="font-weight:800; font-size:22px;">${companyName}</div>
+                </div>
+                <div style="font-size:12px; color:#64748b; text-align:${isRTL ? 'left' : 'right'};">${new Date().toLocaleString()}</div>
+              </div>
+              <h2 class="title">${isRTL ? 'تفاصيل المعاملة' : 'Transaction Details'}</h2>
+              <div class="grid">
+                <div class="field">
+                  <div class="field-label">${isRTL ? 'النوع' : 'Type'}</div>
+                  <div class="field-value">${getTypeLabel(transaction.type)}</div>
+                </div>
+                <div class="field">
+                  <div class="field-label">${isRTL ? 'المبلغ' : 'Amount'}</div>
+                  <div class="field-value" style="color:#059669; font-weight:800;">${transaction.type === 'deposit' || transaction.type === 'refund' ? '+' : '-'}${formatCurrency(transaction.amount, transaction.currency)}</div>
+                  <div style="margin-top:4px; color:#64748b; font-size:12px;">${getCurrencyLabel(transaction.currency)}</div>
+                </div>
+                <div class="field">
+                  <div class="field-label">${isRTL ? 'الحالة' : 'Status'}</div>
+                  <div style="margin-top:8px; display:flex; flex-direction:column; align-items:${isRTL ? 'flex-end' : 'flex-start'};">
+                    <span class="badge">${getStatusLabelText(transaction.status)}</span>
+                  </div>
+                </div>
+                <div class="field">
+                  <div class="field-label">${isRTL ? 'الطريقة' : 'Method'}</div>
+                  <div class="field-value">${getMethodLabel(transaction.method)}</div>
+                </div>
+                <div class="field">
+                  <div class="field-label">${isRTL ? 'التاريخ' : 'Date'}</div>
+                  <div class="field-value">${transaction.date}</div>
+                </div>
+                <div class="field">
+                  <div class="field-label">${isRTL ? 'المرجع' : 'Reference'}</div>
+                  <div style="margin-top:8px; font-family:monospace; font-size:13px;">${transaction.reference || '-'}</div>
+                </div>
+              </div>
+              ${transaction.notes ? `<div style="margin-top:24px; text-align:${isRTL ? 'right' : 'left'};"><div class="field-label">${isRTL ? 'ملاحظات' : 'Notes'}</div><div class="notes-box">${getNotesLabel(transaction.notes)}</div></div>` : ''}
+            </div>
+          </body>
+        </html>
+      `;
+
+      const w = window.open("", "_blank");
+      if (!w) {
+        toast.error(isRTL ? "تعذر فتح نافذة الطباعة" : "Unable to open print window");
+        return;
+      }
+      w.document.write(html);
+      w.document.close();
+      w.focus();
+      w.print();
+    } catch (e: any) {
+      toast.error(isRTL ? "فشل الطباعة" : "Failed to print");
+    }
   };
 
   const clearFilters = () => {
@@ -629,17 +863,40 @@ export default function FinancialTransactions() {
                           {getStatusBadge(transaction.status)}
                         </div>
                       </div>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => {
-                          setSelectedTransaction(transaction);
-                          setIsTransactionDetailsOpen(true);
-                        }}
-                        className="min-h-[40px] min-w-[40px]"
-                      >
-                        <Eye className="h-4 w-4" />
-                      </Button>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleDownloadTransaction(transaction)}
+                          className="min-h-[40px] min-w-[40px]"
+                          disabled={downloadingId === transaction.id}
+                        >
+                          {downloadingId === transaction.id ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Download className="h-4 w-4" />
+                          )}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handlePrintTransaction(transaction)}
+                          className="min-h-[40px] min-w-[40px]"
+                        >
+                          <Printer className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            setSelectedTransaction(transaction);
+                            setIsTransactionDetailsOpen(true);
+                          }}
+                          className="min-h-[40px] min-w-[40px]"
+                        >
+                          <Eye className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </div>
                   </div>
                 ))
@@ -752,6 +1009,29 @@ export default function FinancialTransactions() {
                   </div>
                 </div>
               )}
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => selectedTransaction && handleDownloadTransaction(selectedTransaction)}
+                  className="flex-1"
+                  disabled={downloadingId === selectedTransaction?.id}
+                >
+                  {downloadingId === selectedTransaction?.id ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <Download className="h-4 w-4 mr-2" />
+                  )}
+                  {isRTL ? "تحميل" : "Download"}
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => selectedTransaction && handlePrintTransaction(selectedTransaction)}
+                  className="flex-1"
+                >
+                  <Printer className="h-4 w-4 mr-2" />
+                  {isRTL ? "طباعة" : "Print"}
+                </Button>
+              </div>
               <Separator />
               <Button
                 onClick={() => setIsTransactionDetailsOpen(false)}

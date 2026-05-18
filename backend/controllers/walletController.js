@@ -6,12 +6,39 @@ const ExcelJS = require("exceljs");
 
 const PAYMERA_BASE_URL =
   process.env.PAYMERA_EGATE_BASE_URL || "https://egate-t.paymera.cc";
+const PAYMERA_FALLBACK_BASE_URL = "https://egate-t.paymera.cc";
 const PAYMERA_USERNAME = process.env.PAYMERA_EGATE_USERNAME || "";
 const PAYMERA_PASSWORD = process.env.PAYMERA_EGATE_PASSWORD || "";
 const PAYMERA_TERMINAL_ID = process.env.PAYMERA_EGATE_TERMINAL_ID || "";
+const PAYMERA_DEFAULT_LANG = process.env.PAYMERA_EGATE_LANG || "en";
+const PAYMERA_PAYMENT_TYPE = process.env.PAYMERA_EGATE_PAYMENT_TYPE || "";
 const PAYMERA_CALLBACK_URL = process.env.PAYMERA_EGATE_CALLBACK_URL || "";
 const PAYMERA_TRIGGER_URL = process.env.PAYMERA_EGATE_TRIGGER_URL || "";
-const PAYMERA_DEFAULT_LANG = process.env.PAYMERA_EGATE_LANG || "en";
+const PAYMERA_SUCCESS_REDIRECT_URL =
+  process.env.PAYMERA_EGATE_SUCCESS_REDIRECT_URL ||
+  "http://localhost:5173/?deposit=success";
+
+const getActiveServerPort = () =>
+  String(process.env.ACTIVE_SERVER_PORT || process.env.PORT || "").trim();
+
+const normalizeLocalhostUrl = (url) => {
+  const rawUrl = String(url || "").trim();
+  if (!rawUrl || !rawUrl.includes("localhost")) return rawUrl;
+
+  const activePort = getActiveServerPort();
+  if (!activePort) return rawUrl;
+
+  return rawUrl.replace(/localhost:\\d+/i, `localhost:${activePort}`);
+};
+
+const getPaymeraCallbackUrl = () => normalizeLocalhostUrl(PAYMERA_CALLBACK_URL);
+const getPaymeraTriggerUrl = () => normalizeLocalhostUrl(PAYMERA_TRIGGER_URL);
+const getPaymeraCallbackUrlWithPaymentId = (paymentId) => {
+  const baseUrl = getPaymeraCallbackUrl();
+  if (!baseUrl) return "";
+  const separator = baseUrl.includes("?") ? "&" : "?";
+  return `${baseUrl}${separator}paymentId=${encodeURIComponent(String(paymentId))}`;
+};
 
 const SYRIATEL_BASE_URL = process.env.SYRIATEL_EPAYMENT_BASE_URL || "";
 const SYRIATEL_USERNAME = process.env.SYRIATEL_EPAYMENT_USERNAME || "";
@@ -35,6 +62,8 @@ const successStatusTokens = [
   "completed",
   "approved",
   "done",
+  "A",
+  "a",
 ];
 
 const failedStatusTokens = [
@@ -55,10 +84,55 @@ const paymentIdPatterns = [
 
 const paymentIdKeyPatterns = [/payment[_-]?id/i, /transaction[_-]?id/i, /id$/i];
 
-const urlKeyPatterns = [/payment[_-]?url/i, /redirect[_-]?url/i, /url$/i];
+const urlKeyPatterns = [
+  /payment[_-]?url/i,
+  /redirect[_-]?url/i,
+  /location$/i,
+  /url$/i,
+  /payment[_-]?link/i,
+  /redirect[_-]?link/i,
+  /link$/i,
+];
 
 const isPlainObject = (value) =>
   Boolean(value) && typeof value === "object" && !Array.isArray(value);
+
+const encodeFormValue = (key, value, entries) => {
+  if (value === undefined || value === null) return;
+
+  if (typeof value === "object") {
+    if (Array.isArray(value)) {
+      value.forEach((item) => encodeFormValue(`${key}[]`, item, entries));
+      return;
+    }
+
+    Object.entries(value).forEach(([subKey, subValue]) => {
+      encodeFormValue(`${key}[${subKey}]`, subValue, entries);
+    });
+    return;
+  }
+
+  entries.push([key, String(value)]);
+};
+
+const toUrlEncodedForm = (body) => {
+  if (!body || typeof body !== "object") return "";
+
+  const entries = [];
+  Object.entries(body).forEach(([key, value]) => encodeFormValue(key, value, entries));
+  return new URLSearchParams(entries).toString();
+};
+
+const isPaymeraFailureResponse = (payload) => {
+  if (!payload || typeof payload !== "object") return false;
+  const errorCode = String(payload?.ErrorCode ?? payload?.errorCode ?? "").trim();
+  const message = String(payload?.ErrorMessage ?? payload?.message ?? "").toLowerCase();
+  return (
+    (errorCode && errorCode !== "0") ||
+    message.includes("some info are missing") ||
+    message.includes("array_key_exists")
+  );
+};
 
 const searchDeep = (value, predicate, seen = new Set()) => {
   if (value === null || value === undefined) return undefined;
@@ -97,9 +171,30 @@ const extractUuidLike = (text) => {
   return "";
 };
 
+const extractIdFromQueryString = (text) => {
+  const str = String(text || "");
+  const queryPattern = /[?&]([^=&#]+)=([^&#]*)/g;
+  let match;
+
+  while ((match = queryPattern.exec(str))) {
+    const key = String(match[1] || "").trim();
+    const value = String(match[2] || "").trim();
+    if (!key || !value) continue;
+
+    if (/payment[_-]?id|transaction[_-]?id|id$/i.test(key)) {
+      return decodeURIComponent(value);
+    }
+  }
+
+  return "";
+};
+
 const extractIdFromUrl = (text) => {
   const str = String(text || "").trim();
   if (!str) return "";
+
+  const queryId = extractIdFromQueryString(str);
+  if (queryId) return queryId;
 
   const uuid = extractUuidLike(str);
   if (uuid) return uuid;
@@ -124,9 +219,11 @@ const extractIdFromUrl = (text) => {
     }
 
     const segments = url.pathname.split("/").filter(Boolean);
-    for (const segment of segments) {
+    for (const segment of segments.reverse()) {
       const inferred = extractUuidLike(segment) || String(segment).trim();
-      if (inferred && inferred.length >= 8) return inferred;
+      if (inferred && inferred.length >= 4 && !/^(api|create|payment|callback|success|failed|error)$/i.test(inferred)) {
+        return inferred;
+      }
     }
   } catch {
     // not a URL
@@ -166,6 +263,14 @@ const sanitizePaymeraPayload = (payload) => {
     cloned.terminalId = String(cloned.terminalId || "");
   }
 
+  if (Object.prototype.hasOwnProperty.call(cloned, "terminal_id")) {
+    cloned.terminal_id = String(cloned.terminal_id || "");
+  }
+
+  if (Object.prototype.hasOwnProperty.call(cloned, "amount")) {
+    cloned.amount = String(cloned.amount || "");
+  }
+
   return cloned;
 };
 
@@ -193,6 +298,22 @@ const sanitizeSyriatelPayload = (payload) => {
 const logSyriatel = (phase, details) => {
   const timestamp = new Date().toISOString();
   console.log(`[SYRIATEL][${timestamp}][${phase}]`, details);
+};
+
+const sendPaymeraRedirect = (res, url, message) => {
+  const safeUrl = String(url || "").replace(/"/g, '%22');
+  res.status(200).send(`<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="refresh" content="0;url=${safeUrl}" />
+    <title>Redirecting...</title>
+  </head>
+  <body>
+    <p>${message || "Redirecting..."}</p>
+    <script>window.location.href = ${JSON.stringify(safeUrl)};</script>
+  </body>
+</html>`);
 };
 
 const getSyriatelErrorInfo = (payload) => {
@@ -312,6 +433,7 @@ const getGatewayStatusText = (payload) => {
     payload?.payment_status ||
     payload?.paymentStatus ||
     payload?.data?.status ||
+    payload?.Data?.status ||
     payload?.data?.payment_status ||
     payload?.data?.paymentStatus ||
     "";
@@ -328,6 +450,21 @@ const isGatewayFailed = (statusText) =>
   failedStatusTokens.some((token) => statusText.includes(token));
 
 const getGatewayPaymentId = (payload) => {
+  if (payload && typeof payload === "object") {
+    const explicitUrl = String(
+      payload.redirectUrl ||
+        payload.location ||
+        payload?.headers?.location ||
+        payload?.response?.headers?.location ||
+        "",
+    ).trim();
+
+    if (explicitUrl) {
+      const inferred = extractIdFromUrl(explicitUrl);
+      if (inferred) return inferred;
+    }
+  }
+
   const candidates = [
     payload,
     payload?.data,
@@ -367,7 +504,27 @@ const getGatewayPaymentId = (payload) => {
   return extractIdFromUrl(rawText);
 };
 
+const extractFirstUrlFromString = (text) => {
+  const str = String(text || "");
+  const match = str.match(/https?:\/\/[\w\-./?&=#+%]+/gi);
+  return match?.[0] || "";
+};
+
 const getGatewayPaymentUrl = (payload) => {
+  if (payload && typeof payload === "object") {
+    const explicitUrl = String(
+      payload.redirectUrl ||
+        payload.location ||
+        payload?.headers?.location ||
+        payload?.response?.headers?.location ||
+        "",
+    ).trim();
+
+    if (explicitUrl) {
+      return explicitUrl;
+    }
+  }
+
   const url = searchDeep(payload, (entry, key) => {
     if (!key || !urlKeyPatterns.some((pattern) => pattern.test(String(key)))) {
       return false;
@@ -384,15 +541,22 @@ const getGatewayPaymentUrl = (payload) => {
     return payload;
   }
 
-  return "";
+  const rawText =
+    typeof payload === "string"
+      ? payload
+      : typeof payload?.raw === "string"
+      ? payload.raw
+      : JSON.stringify(payload || {});
+
+  return extractFirstUrlFromString(rawText);
 };
 
-const callPaymera = async ({ method, path, body }) => {
+const callPaymera = async ({ method, path, body, baseOverride, contentType }) => {
   if (!PAYMERA_USERNAME || !PAYMERA_PASSWORD || !PAYMERA_TERMINAL_ID) {
     throw new Error("Paymera eGate credentials are not configured");
   }
 
-  const base = PAYMERA_BASE_URL.replace(/\/$/, "");
+  const base = (baseOverride || PAYMERA_BASE_URL).replace(/\/$/, "");
   const authToken = Buffer.from(
     `${PAYMERA_USERNAME}:${PAYMERA_PASSWORD}`,
   ).toString("base64");
@@ -403,13 +567,31 @@ const callPaymera = async ({ method, path, body }) => {
     body: sanitizePaymeraPayload(body),
   });
 
+  const requestBody =
+    body && typeof body === "object"
+      ? contentType === "application/x-www-form-urlencoded"
+        ? toUrlEncodedForm(body)
+        : JSON.stringify(body)
+      : typeof body === "string"
+      ? body
+      : undefined;
+  const requestContentType = body
+    ? contentType || "application/json"
+    : undefined;
+
+  const headers = {
+    Authorization: `Basic ${authToken}`,
+    Accept: "application/json",
+  };
+  if (requestContentType) {
+    headers["Content-Type"] = requestContentType;
+  }
+
   const response = await fetch(`${base}${path}`, {
     method,
-    headers: {
-      Authorization: `Basic ${authToken}`,
-      "Content-Type": "application/json",
-    },
-    body: body ? JSON.stringify(body) : undefined,
+    redirect: "manual",
+    headers,
+    body: requestBody,
   });
 
   const text = await response.text();
@@ -421,14 +603,68 @@ const callPaymera = async ({ method, path, body }) => {
     data = { raw: text };
   }
 
-  logPaymera("RESPONSE", {
+  const locationHeader = response.headers.get("location") || "";
+  const isErrorRedirect =
+    response.status >= 300 &&
+    response.status < 400 &&
+    /\/api\/Error/i.test(locationHeader);
+
+  const isFailurePayload =
+    response.status === 200 &&
+    data &&
+    typeof data === "object" &&
+    ((typeof data.ErrorCode !== "undefined" && Number(data.ErrorCode) !== 0) ||
+      (typeof data.errorCode !== "undefined" &&
+        String(data.errorCode).trim() !== "0") ||
+      (typeof data.status === "string" &&
+        isGatewayFailed(String(data.status).trim())));
+
+  const responseDetails = {
     method,
     url: `${base}${path}`,
     status: response.status,
     ok: response.ok,
+    location: locationHeader,
     raw: text,
     parsed: data,
-  });
+  };
+
+  logPaymera("RESPONSE", responseDetails);
+
+  if ((isErrorRedirect || isFailurePayload) && base !== PAYMERA_FALLBACK_BASE_URL) {
+    logPaymera("WARNING", {
+      message: "Paymera returned error response; retrying fallback base URL",
+      attemptBase: base,
+      location: locationHeader,
+      failurePayload: isFailurePayload ? data : undefined,
+    });
+    return callPaymera({ method, path, body, baseOverride: PAYMERA_FALLBACK_BASE_URL });
+  }
+
+  if (response.status >= 300 && response.status < 400 && locationHeader) {
+    if (/\/api\/Error/i.test(locationHeader)) {
+      const errorMessage = `Paymera redirect error path returned: ${locationHeader}`;
+      logPaymera("ERROR", {
+        method,
+        url: `${base}${path}`,
+        status: response.status,
+        location: locationHeader,
+      });
+      throw new Error(errorMessage);
+    }
+
+    const absoluteRedirect = /^https?:\/\//i.test(locationHeader)
+      ? locationHeader
+      : `${base}${locationHeader}`;
+
+    return {
+      status: response.status,
+      location: locationHeader,
+      redirectUrl: absoluteRedirect,
+      headers: Object.fromEntries(response.headers.entries()),
+      raw: text,
+    };
+  }
 
   if (!response.ok) {
     logPaymera("ERROR", {
@@ -436,6 +672,7 @@ const callPaymera = async ({ method, path, body }) => {
       url: `${base}${path}`,
       status: response.status,
       parsed: data,
+      location: locationHeader,
     });
     throw new Error(
       data?.message ||
@@ -524,32 +761,8 @@ exports.deposit = async (req, res) => {
     }
 
     if (isPaymeraProvider) {
-      const gatewayResponse = await callPaymera({
-        method: "POST",
-        path: "/api/create-payment",
-        body: {
-          lang: PAYMERA_DEFAULT_LANG,
-          terminalId: PAYMERA_TERMINAL_ID,
-          amount: parsedAmount,
-          callbackURL: PAYMERA_CALLBACK_URL,
-          triggerURL: PAYMERA_TRIGGER_URL,
-          notes: `Wallet deposit for user ${req.user.id} (${normalizedCurrency})`,
-        },
-      });
-
-      const externalPaymentId = getGatewayPaymentId(gatewayResponse);
-      const paymentUrl = getGatewayPaymentUrl(gatewayResponse);
-
-      if (!externalPaymentId) {
-        return res.status(502).json({
-          success: false,
-          message: "Unable to retrieve payment ID from gateway",
-          data: { gatewayResponse },
-        });
-      }
-
+      let gatewayResponse;
       const balanceBefore = Number(user.balance?.[normalizedCurrency] || 0);
-
       const transaction = await Transaction.create({
         userId: req.user.id,
         type: "deposit",
@@ -562,11 +775,136 @@ exports.deposit = async (req, res) => {
         balanceAfter: balanceBefore,
         metadata: {
           gateway: "paymera-egate",
-          externalPaymentId,
-          paymentUrl,
+          externalPaymentId: "",
+          paymentUrl: "",
         },
         processedAt: null,
       });
+
+      try {
+        const callbackUrl = getPaymeraCallbackUrlWithPaymentId(transaction._id);
+        const triggerUrl = getPaymeraTriggerUrl();
+
+        if (!callbackUrl || !triggerUrl) {
+        return res.status(500).json({
+          success: false,
+          message:
+            "Paymera callback or trigger URL is not configured. Please set PAYMERA_EGATE_CALLBACK_URL and PAYMERA_EGATE_TRIGGER_URL in backend/.env.",
+        });
+      }
+
+      const paymeraPayload = {
+          lang: PAYMERA_DEFAULT_LANG,
+          terminalId: String(PAYMERA_TERMINAL_ID || ""),
+          amount: parsedAmount,
+          currency: normalizedCurrency,
+          callbackURL: callbackUrl,
+          triggerURL: triggerUrl,
+          savedCards: "S",
+          appUser: "Shipme",
+          notes: `Wallet deposit for user ${req.user.id} (${normalizedCurrency})`,
+        };
+
+        if (PAYMERA_PAYMENT_TYPE) {
+          paymeraPayload.payment_type = PAYMERA_PAYMENT_TYPE;
+        }
+
+        gatewayResponse = await callPaymera({
+          method: "POST",
+          path: "/api/create-payment",
+          body: paymeraPayload,
+          contentType: "application/x-www-form-urlencoded",
+        });
+
+        if (isPaymeraFailureResponse(gatewayResponse)) {
+          logPaymera("WARNING", {
+            message: "Paymera returned a failure response; retrying nested data wrapper",
+            originalResponse: gatewayResponse,
+          });
+
+          gatewayResponse = await callPaymera({
+            method: "POST",
+            path: "/api/create-payment",
+            body: {
+              data: paymeraPayload,
+            },
+            contentType: "application/x-www-form-urlencoded",
+          });
+        }
+      } catch (paymeraErr) {
+        transaction.status = "failed";
+        transaction.description = "Paymera eGate create payment failed";
+        transaction.processedAt = new Date();
+        transaction.metadata = transaction.metadata || {};
+        if (typeof transaction.metadata.set === "function") {
+          transaction.metadata.set("paymeraError", String(paymeraErr?.message || paymeraErr));
+        } else {
+          transaction.metadata.paymeraError = String(paymeraErr?.message || paymeraErr);
+        }
+        await transaction.save();
+
+        console.error("Paymera create-payment error:", paymeraErr);
+        return res.status(502).json({
+          success: false,
+          message: "Paymera request failed",
+          error: String(paymeraErr?.message || paymeraErr),
+        });
+      }
+
+      const externalPaymentId =
+        String(
+          gatewayResponse?.Data?.paymentId ||
+            gatewayResponse?.Data?.payment_id ||
+            gatewayResponse?.Data?.id ||
+            "",
+        ).trim();
+      const paymeraRrn = String(
+        gatewayResponse?.Data?.rrn ||
+          gatewayResponse?.Data?.RRN ||
+          gatewayResponse?.Data?.rrnNumber ||
+          gatewayResponse?.Data?.reference ||
+          "",
+      ).trim();
+      const paymentUrl = getGatewayPaymentUrl(gatewayResponse);
+
+      if (!externalPaymentId) {
+        transaction.status = "failed";
+        transaction.description = "Paymera eGate create payment returned no external ID";
+        transaction.processedAt = new Date();
+        transaction.metadata = transaction.metadata || {};
+        if (typeof transaction.metadata.set === "function") {
+          transaction.metadata.set("paymeraResponse", gatewayResponse);
+        } else {
+          transaction.metadata.paymeraResponse = gatewayResponse;
+        }
+        await transaction.save();
+
+        console.error("Paymera create returned no paymentId", { gatewayResponse });
+        return res.status(502).json({
+          success: false,
+          message: "Unable to retrieve payment ID from gateway",
+          data: { gatewayResponse },
+        });
+      }
+
+      transaction.metadata = transaction.metadata || {};
+      if (typeof transaction.metadata.set === "function") {
+        transaction.metadata.set("externalPaymentId", externalPaymentId);
+        transaction.metadata.set("paymentUrl", paymentUrl);
+        if (paymeraRrn) {
+          transaction.metadata.set("paymeraRrn", paymeraRrn);
+        }
+      } else {
+        transaction.metadata.externalPaymentId = externalPaymentId;
+        transaction.metadata.paymentUrl = paymentUrl;
+        if (paymeraRrn) {
+          transaction.metadata.paymeraRrn = paymeraRrn;
+        }
+      }
+      if (paymeraRrn) {
+        transaction.description = `Paymera eGate deposit pending | Transaction Id: ${paymeraRrn}`;
+      }
+      await transaction.save();
 
       const io = req.app.get("io");
       if (io) {
@@ -697,6 +1035,269 @@ exports.deposit = async (req, res) => {
   }
 };
 
+// @desc    Paymera callback / webhook handler
+// @route   POST|GET /api/wallet/paymera/callback
+// @access  Public (called by Paymera)
+exports.paymeraCallback = async (req, res) => {
+  try {
+    const incoming = { query: req.query || {}, body: req.body || {} };
+
+    logPaymera("CALLBACK_RECEIVED", sanitizePaymeraPayload(incoming));
+
+    // Try to get our internal transaction ID from the callback query or payload
+    const paymentId =
+      String(req.query.paymentId || "").trim() ||
+      getGatewayPaymentId(incoming) ||
+      getGatewayPaymentId(req.query) ||
+      getGatewayPaymentId(req.body) ||
+      "";
+
+    if (!paymentId) {
+      logPaymera("CALLBACK_WARN", { message: "No paymentId found in callback", incoming });
+      return res.redirect(PAYMERA_SUCCESS_REDIRECT_URL);
+    }
+
+    // find the transaction by internal id or external gateway id
+    const transaction = await Transaction.findOne({
+      $or: [
+        { _id: paymentId },
+        { "metadata.externalPaymentId": paymentId },
+      ],
+    });
+
+    if (!transaction) {
+      logPaymera("CALLBACK_WARN", { message: "Transaction not found for paymentId", paymentId });
+      return res.status(404).send("Transaction not found");
+    }
+
+    const callbackGatewayPaymentId = String(
+      getGatewayPaymentId(req.body) || getGatewayPaymentId(req.query) || ""
+    ).trim();
+    const savedExternalPaymentId = String(
+      transaction.metadata?.get("externalPaymentId") || ""
+    ).trim();
+
+    let gatewayPaymentId = savedExternalPaymentId || "";
+    if (!gatewayPaymentId && callbackGatewayPaymentId && callbackGatewayPaymentId !== String(transaction._id)) {
+      transaction.metadata = transaction.metadata || {};
+      if (typeof transaction.metadata.set === "function") {
+        transaction.metadata.set("externalPaymentId", callbackGatewayPaymentId);
+      } else {
+        transaction.metadata.externalPaymentId = callbackGatewayPaymentId;
+      }
+      await transaction.save();
+      gatewayPaymentId = callbackGatewayPaymentId;
+      logPaymera("CALLBACK_INFO", {
+        message: "Stored external Paymera payment id from callback",
+        transactionId: transaction._id,
+        externalPaymentId: gatewayPaymentId,
+      });
+    }
+
+    if (!gatewayPaymentId) {
+      logPaymera("CALLBACK_WARN", {
+        message: "No external Paymera payment ID stored for transaction",
+        transactionId: transaction._id,
+        transaction: transaction.toObject(),  
+        exter: transaction.metadata?.externalPaymentId
+
+      });
+      return res.status(500).send("Missing gateway payment id");
+    }
+
+    // Query Paymera for latest status
+    let gatewayResponse;
+    try {
+      gatewayResponse = await callPaymera({
+        method: "GET",
+        path: `/api/get-payment-status/${encodeURIComponent(gatewayPaymentId)}`,
+      });
+    } catch (err) {
+      logPaymera("CALLBACK_ERROR", { message: "Failed to query Paymera status", error: String(err?.message || err) });
+      return res.status(502).send("Failed to query gateway");
+    }
+
+    const gatewayStatusText = getGatewayStatusText(gatewayResponse);
+
+    const errorMessage =
+      String(
+        gatewayResponse?.ErrorMessage ||
+          gatewayResponse?.errorMessage ||
+          gatewayResponse?.message ||
+          gatewayResponse?.status ||
+          gatewayResponse?.data?.ErrorMessage ||
+          gatewayResponse?.data?.errorMessage ||
+          gatewayResponse?.data?.message ||
+          "Payment failed",
+      ).trim();
+
+    if (isGatewaySuccess(gatewayStatusText)) {
+      if (transaction.status === "pending") {
+        const user = await User.findById(transaction.userId);
+        if (user) {
+          const currency = transaction.currency;
+          const before = Number(user.balance?.[currency] || 0);
+          const amount = Number(transaction.amount || 0);
+          user.balance[currency] = before + amount;
+          await user.save();
+        }
+
+        const paymeraRrn = String(
+          transaction.metadata?.get?.("paymeraRrn") ||
+            transaction.metadata?.paymeraRrn ||
+            gatewayResponse?.Data?.rrn ||
+            gatewayResponse?.Data?.RRN ||
+            gatewayResponse?.Data?.rrnNumber ||
+            gatewayResponse?.Data?.reference ||
+            "",
+        ).trim();
+
+        transaction.status = "completed";
+        transaction.description = paymeraRrn
+          ? `Paymera eGate deposit completed | Transaction Id: ${paymeraRrn}`
+          : `Paymera eGate deposit completed`;
+        transaction.metadata = transaction.metadata || {};
+        if (typeof transaction.metadata.set === "function") {
+          transaction.metadata.set("paymeraStatus", gatewayStatusText);
+          if (paymeraRrn) {
+            transaction.metadata.set("paymeraRrn", paymeraRrn);
+          }
+        } else {
+          transaction.metadata.paymeraStatus = gatewayStatusText;
+          if (paymeraRrn) {
+            transaction.metadata.paymeraRrn = paymeraRrn;
+          }
+        }
+        transaction.processedAt = new Date();
+        await transaction.save();
+      }
+
+      logPaymera("CALLBACK_INFO", {
+        message: "Paymera deposit completed",
+        paymentId,
+        gatewayStatusText,
+        transactionStatus: transaction.status,
+      });
+
+      return res.send(`<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Payment Successful</title>
+    <meta http-equiv="refresh" content="3;url=${PAYMERA_SUCCESS_REDIRECT_URL}" />
+    <style>
+      body { font-family: sans-serif; background: #f5f7fb; color: #1f2937; margin:0; padding:0; }
+      .page { max-width: 600px; margin: 64px auto; text-align: center; padding: 24px; }
+      .loader { margin: 24px auto 16px; width: 64px; height: 64px; border: 8px solid #e2e8f0; border-top-color: #6366f1; border-radius: 50%; animation: spin 1s linear infinite; }
+      @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+      a { color: #4f46e5; text-decoration: none; }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <div class="loader" aria-hidden="true"></div>
+      <h1>Payment Successful</h1>
+      <h2>تمت عملية الدفع بنجاح</h2>
+      <p>Your deposit has been confirmed and your balance has been updated.</p>
+      <p>تم تأكيد الإيداع وتم تحديث رصيدك.</p>
+      <p><strong>Transaction ID:</strong> ${transaction._id}</p>
+      <p><strong>رقم المعاملة:</strong> ${transaction._id}</p>
+      <p><strong>Notes:</strong> Paymera eGate deposit completed.</p>
+      <p><strong>الملاحظات:</strong> تم إكمال الإيداع عبر Paymera eGate.</p>
+      <p>Redirecting to home in 3 seconds...</p>
+      <p>جاري التحويل إلى الصفحة الرئيسية خلال ٣ ثوانٍ...</p>
+      <p><a href="${PAYMERA_SUCCESS_REDIRECT_URL}">Click here if you are not redirected</a></p>
+      <p><a href="${PAYMERA_SUCCESS_REDIRECT_URL}">انقر هنا إذا لم يتم إعادة التوجيه</a></p>
+    </div>
+    <script>
+      setTimeout(() => {
+        window.location.href = ${JSON.stringify(PAYMERA_SUCCESS_REDIRECT_URL)};
+      }, 3000);
+    </script>
+  </body>
+</html>`);
+    }
+
+    if (gatewayStatusText && isGatewayFailed(gatewayStatusText)) {
+      transaction.status = "failed";
+      transaction.description = `Paymera eGate deposit failed: ${errorMessage}`;
+      transaction.metadata = transaction.metadata || {};
+      if (typeof transaction.metadata.set === "function") {
+        transaction.metadata.set("paymeraStatus", gatewayStatusText);
+        transaction.metadata.set("paymeraError", errorMessage);
+      } else {
+        transaction.metadata.paymeraStatus = gatewayStatusText;
+        transaction.metadata.paymeraError = errorMessage;
+      }
+      transaction.processedAt = new Date();
+      await transaction.save();
+
+      logPaymera("CALLBACK_INFO", {
+        message: "Paymera deposit failed",
+        paymentId,
+        gatewayStatusText,
+        transactionStatus: transaction.status,
+      });
+
+      return res.send(`<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Payment Failed</title>
+    <style>
+      body { font-family: sans-serif; background: #f5f7fb; color: #1f2937; margin:0; padding:0; }
+      .page { max-width: 600px; margin: 64px auto; text-align: center; padding: 24px; }
+      a { color: #ef4444; text-decoration: none; }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <h1>Payment Failed</h1>
+      <h2>فشل الدفع</h2>
+      <p>${errorMessage}</p>
+      <p>There was an issue processing your payment. Please try again or contact support.</p>
+      <p>حدث خطأ أثناء معالجة الدفع. يرجى المحاولة مرة أخرى أو التواصل مع الدعم.</p>
+      <p><a href="${PAYMERA_SUCCESS_REDIRECT_URL}">Return to home</a></p>
+      <p><a href="${PAYMERA_SUCCESS_REDIRECT_URL}">العودة إلى الصفحة الرئيسية</a></p>
+    </div>
+  </body>
+</html>`);
+    }
+
+    logPaymera("CALLBACK_INFO", {
+      message: "Paymera callback received, status not final",
+      paymentId,
+      gatewayStatusText,
+      transactionStatus: transaction.status,
+    });
+    return res.send(`<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Payment Pending</title>
+    <style>
+      body { font-family: sans-serif; background: #f5f7fb; color: #1f2937; margin:0; padding:0; }
+      .page { max-width: 600px; margin: 64px auto; text-align: center; padding: 24px; }
+      a { color: #4f46e5; text-decoration: none; }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <h1>Payment Pending</h1>
+      <h2>الدفع قيد المعالجة</h2>
+      <p>Your payment is still processing. Please refresh this page or return later.</p>
+      <p>لا يزال الدفع قيد المعالجة. يرجى تحديث الصفحة أو العودة لاحقًا.</p>
+      <p><a href="${PAYMERA_SUCCESS_REDIRECT_URL}">Return to home</a></p>
+      <p><a href="${PAYMERA_SUCCESS_REDIRECT_URL}">العودة إلى الصفحة الرئيسية</a></p>
+    </div>
+  </body>
+</html>`);
+  } catch (error) {
+    console.error("Paymera callback error:", error);
+    return res.status(500).send("Callback handler error");
+  }
+};
+
 // @desc    Check Syriatel Cash deposit status
 // @route   GET /api/wallet/deposit/status/:paymentId
 // @access  Private
@@ -716,6 +1317,7 @@ exports.checkDepositStatus = async (req, res) => {
       type: "deposit",
       $or: [
         { "metadata.syriatelTransactionId": paymentId },
+        { "metadata.externalPaymentId": paymentId },
         { _id: paymentId },
       ],
     });
@@ -734,10 +1336,27 @@ exports.checkDepositStatus = async (req, res) => {
     const gateway = String(transaction.metadata?.get?.("gateway") || "").trim();
 
     if (gateway === "paymera-egate") {
-      const gatewayResponse = await callPaymera({
-        method: "GET",
-        path: `/api/get-payment-status/${encodeURIComponent(paymentId)}`,
-      });
+      const gatewayPaymentId =
+        String(transaction.metadata?.get?.("externalPaymentId") || "") ||
+        paymentId;
+
+      let gatewayResponse;
+      try {
+        gatewayResponse = await callPaymera({
+          method: "GET",
+          path: `/api/get-payment-status/${encodeURIComponent(
+            gatewayPaymentId,
+          )}`,
+        });
+      } catch (paymeraErr) {
+        console.error("Paymera status check error:", paymeraErr);
+        return res.status(502).json({
+          success: false,
+          message: "Paymera request failed",
+          error: String(paymeraErr?.message || paymeraErr),
+          data: { paymentId, transactionId: transaction._id },
+        });
+      }
 
       const gatewayStatusText = getGatewayStatusText(gatewayResponse);
 

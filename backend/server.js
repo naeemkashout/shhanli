@@ -1,3 +1,6 @@
+const dns = require('dns');
+dns.setServers(["1.1.1.1", "8.8.8.8"]); // استخدام سيرفرات Cloudflare و Google لتخطي حجب الـ ISP للـ SRV
+
 const express = require("express");
 const cors = require("cors");
 const dotenv = require("dotenv");
@@ -435,6 +438,29 @@ const startServer = async () => {
   if (!selectedPort) {
     console.error("❌ لم نتمكن من العثور على منفذ متاح");
     process.exit(1);
+  }
+
+  process.env.ACTIVE_SERVER_PORT = String(selectedPort);
+  if (
+    String(process.env.PAYMERA_EGATE_CALLBACK_URL || "").includes("localhost")
+  ) {
+    const callbackMatch = String(process.env.PAYMERA_EGATE_CALLBACK_URL).match(
+      /localhost:(\d+)/i,
+    );
+    const triggerMatch = String(process.env.PAYMERA_EGATE_TRIGGER_URL || "").match(
+      /localhost:(\d+)/i,
+    );
+
+    if (callbackMatch && callbackMatch[1] !== String(selectedPort)) {
+      console.warn(
+        `⚠️ Paymera callback URL localhost port mismatch: configured ${callbackMatch[1]}, actual ${selectedPort}.`,
+      );
+    }
+    if (triggerMatch && triggerMatch[1] !== String(selectedPort)) {
+      console.warn(
+        `⚠️ Paymera trigger URL localhost port mismatch: configured ${triggerMatch[1]}, actual ${selectedPort}.`,
+      );
+    }
   }
 
   console.log(`\n🚀 الخادم يعمل على المنفذ ${selectedPort}`);
