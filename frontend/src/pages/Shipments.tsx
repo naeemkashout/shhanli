@@ -779,6 +779,7 @@ export default function Shipments() {
     const qrSrc = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(
       qrPayload,
     )}`;
+    const logoSrc = `${window.location.origin}/logo.png`;
 
     const escapeHtml = (value: unknown) =>
       String(value ?? "")
@@ -828,9 +829,10 @@ export default function Shipments() {
             color: #fff;
             padding: 12px 16px;
             border-radius: 10px;
+            align-items: center;
           }
           .header-title { margin: 0; font-size: 22px; letter-spacing: 1.2px; }
-          .header-sub { margin: 4px 0 0; font-size: 12px; opacity: 0.95; }
+          .logo { max-width: 180px; width: 100%; height: auto; object-fit: contain; }
           .tracking { font-size: 18px; font-weight: 700; margin-top: 10px; }
           .meta {
             margin-top: 10px;
@@ -901,14 +903,16 @@ export default function Shipments() {
           <div class="header">
             <div>
               <h1 class="header-title">SHIPPING AIR WAYBILL</h1>
-              <div class="header-sub">Shipme Logistics | Global Shipping Form</div>
               <div class="tracking">${escapeHtml(shipment.trackingNumber)}</div>
             </div>
-            <div style="font-size:12px; text-align:${isRTL ? "left" : "right"}">
-              <div>${t("shipments.createdDate")}: ${escapeHtml(createdDate)}</div>
-              <div>${t("status.title")}: ${escapeHtml(t(`status.${shipment.status}`))}</div>
-              <div>${t("shipment.shippingCompany")}: ${escapeHtml(shipment.shippingCompany.name)}</div>
+            <div style="display:flex; align-items:center; justify-content:${isRTL ? "flex-start" : "flex-end"}">
+              <img class="logo" src="${logoSrc}" alt="Shipme Logo" />
             </div>
+          </div>
+          <div style="margin-top:10px; font-size:12px; display:grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; color:#fff;">
+            <div>${t("shipments.createdDate")}: ${escapeHtml(createdDate)}</div>
+            <div>${t("status.title")}: ${escapeHtml(t(`status.${shipment.status}`))}</div>
+            <div>${t("shipment.shippingCompany")}: ${escapeHtml(shipment.shippingCompany.name)}</div>
           </div>
 
           <div class="meta">

@@ -1,4 +1,11 @@
-import React, { createContext, useContext, useState, useEffect } from "react";
+import React, {
+  createContext,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
+import { io, Socket } from "socket.io-client";
 import authService from "@/services/authService";
 import { toast } from "sonner";
 
@@ -65,6 +72,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return storedUser ? (JSON.parse(storedUser) as User) : null;
   });
   const [isLoading, setIsLoading] = useState(true);
+  const socketRef = useRef<Socket | null>(null);
   const tr = (ar: string, en: string) =>
     ((localStorage.getItem("language") as "ar" | "en") || "ar") === "ar"
       ? ar
@@ -96,6 +104,54 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     initAuth();
   }, []);
+
+  useEffect(() => {
+    const userId = String(user?.id || "").trim();
+    const apiBaseUrl =
+      import.meta.env.VITE_API_URL || "http://localhost:5001/api";
+    const socketUrl = apiBaseUrl.replace(/\/api\/?$/, "");
+
+    if (!userId) {
+      if (socketRef.current) {
+        socketRef.current.disconnect();
+        socketRef.current = null;
+      }
+      return;
+    }
+
+    const socket = io(socketUrl, {
+      transports: ["websocket", "polling"],
+      withCredentials: true,
+    });
+
+    socket.on("connect", () => {
+      socket.emit("join-user-room", userId);
+    });
+
+    socket.on("wallet-updated", (payload: any) => {
+      if (payload?.balance) {
+        setUser((prev) => {
+          if (!prev) return prev;
+          const nextUser = {
+            ...prev,
+            balance: {
+              USD: Number(payload.balance.USD) || 0,
+              SYP: Number(payload.balance.SYP) || 0,
+            },
+          };
+          localStorage.setItem("kashout_user", JSON.stringify(nextUser));
+          return nextUser;
+        });
+      }
+    });
+
+    socketRef.current = socket;
+
+    return () => {
+      socket.disconnect();
+      socketRef.current = null;
+    };
+  }, [user?.id]);
 
   const refreshUser = async () => {
     try {

@@ -198,11 +198,12 @@ export default function ResetPassword() {
           {/* Logo */}
           <div className="text-center mb-8">
             <div className="flex items-center justify-center mb-4">
-              <div className="w-12 h-12 bg-blue-600 rounded-xl flex items-center justify-center">
-                <Package className="w-7 h-7 text-white" />
-              </div>
+              <img
+                src="/logo.png"
+                alt={language === "ar" ? "شحنلي" : "Shipme"}
+                className="w-24 h-24 sm:w-28 sm:h-28 object-contain rounded-xl shadow-sm"
+              />
             </div>
-            <h1 className="text-2xl font-bold text-gray-900">شحنلي</h1>
           </div>
 
           <Card className="shadow-xl">
@@ -252,11 +253,12 @@ export default function ResetPassword() {
           {/* Logo */}
           <div className="text-center mb-8">
             <div className="flex items-center justify-center mb-4">
-              <div className="w-12 h-12 bg-blue-600 rounded-xl flex items-center justify-center">
-                <Package className="w-7 h-7 text-white" />
-              </div>
+              <img
+                src="/logo.png"
+                alt={language === "ar" ? "شحنلي" : "Shipme"}
+                className="w-24 h-24 sm:w-28 sm:h-28 object-contain rounded-xl shadow-sm"
+              />
             </div>
-            <h1 className="text-2xl font-bold text-gray-900">شحنلي</h1>
           </div>
 
           <Card className="shadow-xl">
@@ -303,11 +305,12 @@ export default function ResetPassword() {
         {/* Logo */}
         <div className="text-center mb-8">
           <div className="flex items-center justify-center mb-4">
-            <div className="w-12 h-12 bg-blue-600 rounded-xl flex items-center justify-center">
-              <Package className="w-7 h-7 text-white" />
-            </div>
+            <img
+              src="/logo.png"
+              alt={language === "ar" ? "شحنلي" : "Shipme"}
+              className="w-24 h-24 sm:w-28 sm:h-28 object-contain rounded-xl shadow-sm"
+            />
           </div>
-          <h1 className="text-2xl font-bold text-gray-900">شحنلي</h1>
         </div>
 
         <Card className="shadow-xl">

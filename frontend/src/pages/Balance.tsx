@@ -92,8 +92,11 @@ export default function Balance() {
       socket.emit("join-user-room", userId);
     });
 
-    socket.on("new-notification", (notification: any) => {
-      if (notification?.type === "wallet") {
+    socket.on("wallet-updated", (payload: any) => {
+      if (payload?.balance) {
+        setBalanceSYP(Number(payload.balance.SYP) || 0);
+        setBalanceUSD(Number(payload.balance.USD) || 0);
+      } else {
         loadBalanceData();
       }
     });

@@ -22,6 +22,7 @@ import {
   MessageCircle,
   Building2,
   Calculator,
+  Gift,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useLanguage } from "@/contexts/LanguageContext";
@@ -168,6 +169,11 @@ export default function Layout({ children }: LayoutProps) {
       icon: Home,
     },
     {
+      name: language === "ar" ? "العروض" : "Offers",
+      href: "/offers",
+      icon: Gift,
+    },
+    {
       name: t("nav.createShipment"),
       href: "/create-shipment",
       icon: Plus,
@@ -245,12 +251,13 @@ export default function Layout({ children }: LayoutProps) {
           <div className="flex items-center justify-between h-14 sm:h-16">
             {/* Logo */}
             <div className="flex items-center gap-2 sm:gap-3">
-              <div className="w-7 h-7 sm:w-8 sm:h-8 bg-blue-600 rounded-lg flex items-center justify-center">
-                <Package className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
+              <div className="w-28 h-28 sm:w-38 sm:h-38 flex items-center justify-center">
+                <img
+                  src="/logo.png"
+                 
+                />
               </div>
-              <span className="text-lg sm:text-xl font-bold text-gray-900">
-                {language === "ar" ? "شحنلي" : "Shipme"}
-              </span>
+              
             </div>
 
             {/* Desktop Navigation - Show on large screens */}
@@ -284,18 +291,6 @@ export default function Layout({ children }: LayoutProps) {
 
             {/* Right Side */}
             <div className="flex items-center gap-1.5 sm:gap-2.5">
-              {/* Language Switcher - Show on all screens */}
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={toggleLanguage}
-                className="min-h-[44px] px-2 sm:px-3"
-              >
-                <Globe className="w-4 h-4 mr-1 sm:mr-2" />
-                <span className="text-sm">
-                  {language === "ar" ? "EN" : "AR"}
-                </span>
-              </Button>
               <Button
                 variant="ghost"
                 size="sm"
@@ -354,6 +349,19 @@ export default function Layout({ children }: LayoutProps) {
                     >
                       <User className="w-4 h-4 text-gray-500" />
                       {language === "ar" ? "الملف الشخصي" : "Profile"}
+                    </button>
+
+                    <button
+                      className={`w-full flex items-center gap-2 px-3 py-2 hover:bg-gray-100 rounded ${
+                        isRTL ? "text-right" : "text-left"
+                      }`}
+                      onClick={() => {
+                        setOpen(false);
+                        toggleLanguage();
+                      }}
+                    >
+                      <Globe className="w-4 h-4 text-gray-500" />
+                      {language === "ar" ? "English" : "العربية"}
                     </button>
 
                     <button
@@ -451,8 +459,12 @@ export default function Layout({ children }: LayoutProps) {
                     <div className="flex flex-col h-full">
                       <div className="flex items-center justify-between px-4 py-4 sm:py-6 border-b">
                         <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
-                            <Package className="w-5 h-5 text-white" />
+                          <div className="w-14 h-14 flex items-center justify-center">
+                            <img
+                              src="/logo.png"
+                              alt={language === "ar" ? "شحنلي" : "Shipme"}
+                              className="w-14 h-14 object-contain"
+                            />
                           </div>
                           <span className="text-lg font-bold text-gray-900">
                             {language === "ar" ? "شحنلي" : "Shipme"}

@@ -690,11 +690,15 @@ const callPaymera = async ({ method, path, body, baseOverride, contentType }) =>
 exports.getBalance = async (req, res) => {
   try {
     const user = await User.findById(req.user.id);
+    const balance = {
+      USD: Number(user.balance?.USD || 0),
+      SYP: Number(user.balance?.SYP || 0),
+    };
 
     res.json({
       success: true,
       data: {
-        balance: user.balance,
+        balance,
       },
     });
   } catch (error) {
@@ -1138,38 +1142,68 @@ exports.paymeraCallback = async (req, res) => {
           const currency = transaction.currency;
           const before = Number(user.balance?.[currency] || 0);
           const amount = Number(transaction.amount || 0);
-          user.balance[currency] = before + amount;
-          await user.save();
-        }
+          const updatedUser = await User.findByIdAndUpdate(
+            user._id,
+            { $inc: { [`balance.${currency}`]: amount } },
+            { new: true, runValidators: true },
+          );
 
-        const paymeraRrn = String(
-          transaction.metadata?.get?.("paymeraRrn") ||
-            transaction.metadata?.paymeraRrn ||
-            gatewayResponse?.Data?.rrn ||
-            gatewayResponse?.Data?.RRN ||
-            gatewayResponse?.Data?.rrnNumber ||
-            gatewayResponse?.Data?.reference ||
-            "",
-        ).trim();
+          if (updatedUser) {
+            transaction.balanceBefore = before;
+            transaction.balanceAfter = Number(updatedUser.balance?.[currency] || 0);
+          }
 
-        transaction.status = "completed";
-        transaction.description = paymeraRrn
-          ? `Paymera eGate deposit completed | Transaction Id: ${paymeraRrn}`
-          : `Paymera eGate deposit completed`;
-        transaction.metadata = transaction.metadata || {};
-        if (typeof transaction.metadata.set === "function") {
-          transaction.metadata.set("paymeraStatus", gatewayStatusText);
-          if (paymeraRrn) {
-            transaction.metadata.set("paymeraRrn", paymeraRrn);
+          const normalizedBalance = {
+            USD: Number(updatedUser?.balance?.USD || 0),
+            SYP: Number(updatedUser?.balance?.SYP || 0),
+          };
+
+          const paymeraRrn = String(
+            transaction.metadata?.get?.("paymeraRrn") ||
+              transaction.metadata?.paymeraRrn ||
+              gatewayResponse?.Data?.rrn ||
+              gatewayResponse?.Data?.RRN ||
+              gatewayResponse?.Data?.rrnNumber ||
+              gatewayResponse?.Data?.reference ||
+              "",
+          ).trim();
+
+          transaction.status = "completed";
+          transaction.description = paymeraRrn
+            ? `Paymera eGate deposit completed | Transaction Id: ${paymeraRrn}`
+            : `Paymera eGate deposit completed`;
+          transaction.metadata = transaction.metadata || {};
+          if (typeof transaction.metadata.set === "function") {
+            transaction.metadata.set("paymeraStatus", gatewayStatusText);
+            if (paymeraRrn) {
+              transaction.metadata.set("paymeraRrn", paymeraRrn);
+            }
+          } else {
+            transaction.metadata.paymeraStatus = gatewayStatusText;
+            if (paymeraRrn) {
+              transaction.metadata.paymeraRrn = paymeraRrn;
+            }
           }
-        } else {
-          transaction.metadata.paymeraStatus = gatewayStatusText;
-          if (paymeraRrn) {
-            transaction.metadata.paymeraRrn = paymeraRrn;
-          }
+          transaction.processedAt = new Date();
+          await transaction.save();
+
+          await createAndEmitNotification({ app: req.app }, {
+            userId: String(transaction.userId),
+            type: "wallet",
+            titleAr: "إيداع في المحفظة",
+            titleEn: "Wallet Deposit Completed",
+            messageAr: `تم إيداع ${transaction.amount} ${transaction.currency} في محفظتك بنجاح.`,
+            messageEn: `${transaction.amount} ${transaction.currency} has been deposited to your wallet successfully.`,
+            metadata: {
+              transactionId: String(transaction._id),
+              amount: String(transaction.amount),
+              currency: transaction.currency,
+              method: "mobile-payment",
+              paymentId: gatewayPaymentId,
+            },
+            updatedBalance: normalizedBalance,
+          });
         }
-        transaction.processedAt = new Date();
-        await transaction.save();
       }
 
       logPaymera("CALLBACK_INFO", {
@@ -1391,12 +1425,20 @@ exports.checkDepositStatus = async (req, res) => {
         const before = Number(user.balance?.[currency] || 0);
         const amount = Number(transaction.amount || 0);
 
-        user.balance[currency] = before + amount;
-        await user.save();
+        const updatedUser = await User.findByIdAndUpdate(
+          req.user.id,
+          { $inc: { [`balance.${currency}`]: amount } },
+          { new: true, runValidators: true },
+        );
+        const currentBalance = Number(updatedUser?.balance?.[currency] || 0);
+        const normalizedBalance = {
+          USD: Number(updatedUser?.balance?.USD || 0),
+          SYP: Number(updatedUser?.balance?.SYP || 0),
+        };
 
         transaction.status = "completed";
         transaction.balanceBefore = before;
-        transaction.balanceAfter = Number(user.balance[currency] || 0);
+        transaction.balanceAfter = currentBalance;
         transaction.description = "Paymera eGate deposit completed";
         transaction.processedAt = new Date();
         transaction.metadata.set(
@@ -1434,9 +1476,9 @@ exports.checkDepositStatus = async (req, res) => {
             amount: String(amount),
             currency,
             method: "mobile-payment",
-            balanceAfter: JSON.stringify(user.balance || {}),
             paymentId,
           },
+          updatedBalance: normalizedBalance,
         });
 
         return res.json({
@@ -1446,7 +1488,7 @@ exports.checkDepositStatus = async (req, res) => {
             paymentId,
             gatewayStatus: gatewayStatusText,
             transactionStatus: transaction.status,
-            balance: user.balance,
+            balance: updatedUser?.balance,
           },
         });
       }
@@ -1598,12 +1640,20 @@ exports.confirmDeposit = async (req, res) => {
     const before = Number(user.balance?.[currency] || 0);
     const amount = Number(transaction.amount || 0);
 
-    user.balance[currency] = before + amount;
-    await user.save();
+    const updatedUser = await User.findByIdAndUpdate(
+      req.user.id,
+      { $inc: { [`balance.${currency}`]: amount } },
+      { new: true, runValidators: true },
+    );
+    const currentBalance = Number(updatedUser?.balance?.[currency] || 0);
+    const normalizedBalance = {
+      USD: Number(updatedUser?.balance?.USD || 0),
+      SYP: Number(updatedUser?.balance?.SYP || 0),
+    };
 
     transaction.status = "completed";
     transaction.balanceBefore = before;
-    transaction.balanceAfter = Number(user.balance[currency] || 0);
+    transaction.balanceAfter = currentBalance;
     transaction.description = "Syriatel Cash deposit completed";
     transaction.processedAt = new Date();
     transaction.metadata.set("syriatelStatus", "completed");
@@ -1639,9 +1689,9 @@ exports.confirmDeposit = async (req, res) => {
         amount: String(amount),
         currency,
         method: "mobile-payment",
-        balanceAfter: JSON.stringify(user.balance || {}),
         paymentId: normalizedTransactionId,
       },
+      updatedBalance: normalizedBalance,
     });
 
     return res.json({
@@ -1650,7 +1700,7 @@ exports.confirmDeposit = async (req, res) => {
       data: {
         transactionId: normalizedTransactionId,
         transactionStatus: transaction.status,
-        balance: user.balance,
+        balance: updatedUser?.balance,
       },
     });
   } catch (error) {

@@ -261,11 +261,7 @@ export default function WelcomePage({
       }
     >
       <div className={embedded ? "w-full" : "mx-auto max-w-6xl"}>
-        <div className={embedded ? "mb-3 text-center" : "mb-5 text-center"}>
-          <h1 className="mt-2 text-3xl md:text-5xl font-black text-slate-900">
-            {tr("العروض", "Offers")}
-          </h1>
-        </div>
+      
 
         {isLoading ? (
           <div className="h-[320px] rounded-3xl border border-slate-200 bg-white animate-pulse" />

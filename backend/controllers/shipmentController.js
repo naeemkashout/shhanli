@@ -378,6 +378,7 @@ exports.createShipment = async (req, res) => {
           )
         : 0;
     const totalAmount = baseAmount + codFee + expressFee + packagingFee;
+    const safeTotalAmount = Number(totalAmount || 0) < 0 ? 0 : Number(totalAmount || 0);
     const costCurrency = shippingType === "international" ? "USD" : "SYP";
 
     const currentUser = await User.findById(req.user.id);
@@ -399,7 +400,7 @@ exports.createShipment = async (req, res) => {
       },
       cost: {
         ...body.cost,
-        amount: totalAmount,
+        amount: safeTotalAmount,
         baseAmount,
         codFee,
         expressFee,
@@ -422,58 +423,143 @@ exports.createShipment = async (req, res) => {
     };
 
     const shipment = await Shipment.create(shipmentData);
+    let updatedWalletBalance = null;
 
     // Deduct cost from wallet if payment method is wallet
-    if (shipment.cost.paymentMethod === "wallet") {
-      const currency = shipment.cost.currency;
+    const shipmentPaymentMethod = String(shipment.cost.paymentMethod || "").trim().toLowerCase();
+    if (shipmentPaymentMethod === "wallet") {
+      const currency = String(shipment.cost.currency || "SYP").toUpperCase();
+      const rawAmount = shipment.cost.amount;
+      let amount = Number(rawAmount);
 
-      if (currentUser.balance[currency] < shipment.cost.amount) {
-        await Shipment.findByIdAndDelete(shipment._id);
-        return res.status(400).json({
-          success: false,
-          message: "Insufficient balance",
-        });
+      if (!Number.isFinite(amount)) {
+        amount =
+          Number(shipment.cost.baseAmount || 0) +
+          Number(shipment.cost.codFee || 0) +
+          Number(shipment.cost.expressFee || 0) +
+          Number(shipment.cost.packagingFee || 0);
       }
 
-      const balanceBefore = currentUser.balance[currency];
-      currentUser.balance[currency] -= shipment.cost.amount;
-      await currentUser.save();
+      if (!Number.isFinite(amount) || amount < 0) {
+        console.warn(
+          `Negative or invalid shipment amount for wallet payment on shipment ${shipment._id}:`,
+          rawAmount,
+        );
+        amount = 0;
+      }
 
-      // Create transaction record
-      const walletTransaction = await Transaction.create({
-        userId: req.user.id,
-        type: "payment",
-        amount: shipment.cost.amount,
-        currency: currency,
-        status: "completed",
-        method: "wallet",
-        relatedShipment: shipment._id,
-        description: `Payment for shipment ${shipment.trackingNumber}`,
-        balanceBefore,
-        balanceAfter: currentUser.balance[currency],
-        processedAt: new Date(),
-      });
+      const userBalance = Number(currentUser.balance?.[currency] || 0);
 
-      shipment.cost.isPaid = true;
-      await shipment.save();
+      if (amount > 0) {
+        if (userBalance < amount) {
+          await Shipment.findByIdAndDelete(shipment._id);
+          return res.status(400).json({
+            success: false,
+            message: "Insufficient balance",
+          });
+        }
 
-      await createAndEmitNotification(req, {
-        userId: req.user.id,
-        type: "wallet",
-        titleAr: "خصم قيمة الشحنة",
-        titleEn: "Shipment Payment Deducted",
-        messageAr: `تم خصم ${shipment.cost.amount} ${currency} من محفظتك لقيمة الشحنة ${shipment.trackingNumber}.`,
-        messageEn: `${shipment.cost.amount} ${currency} was deducted from your wallet for shipment ${shipment.trackingNumber}.`,
-        metadata: {
-          transactionId: walletTransaction._id,
-          shipmentId: shipment._id,
-          trackingNumber: shipment.trackingNumber,
-          amount: shipment.cost.amount,
+        const balanceBefore = userBalance;
+        const expectedBalanceAfter = balanceBefore - amount;
+        const updatedUser = await User.findOneAndUpdate(
+          {
+            _id: currentUser._id,
+            [`balance.${currency}`]: { $gte: amount },
+          },
+          { $inc: { [`balance.${currency}`]: -amount } },
+          { new: true, runValidators: true },
+        );
+
+        if (!updatedUser) {
+          await Shipment.findByIdAndDelete(shipment._id);
+          return res.status(500).json({
+            success: false,
+            message: "Unable to update wallet balance",
+          });
+        }
+
+        const balanceAfter = Number(updatedUser.balance?.[currency] || 0);
+        const normalizedBalance = {
+          USD: Number(updatedUser.balance?.USD || 0),
+          SYP: Number(updatedUser.balance?.SYP || 0),
+        };
+        updatedWalletBalance = normalizedBalance;
+
+        if (balanceAfter !== expectedBalanceAfter) {
+          console.warn(
+            `Wallet deduction mismatch for user ${req.user.id}: expected ${expectedBalanceAfter}, got ${balanceAfter}`,
+          );
+        }
+
+        // Create transaction record
+        const walletTransaction = await Transaction.create({
+          userId: req.user.id,
+          type: "payment",
+          amount,
           currency,
-          paymentMethod: "wallet",
-        },
-      });
+          status: "completed",
+          method: "wallet",
+          relatedShipment: shipment._id,
+          description: `Payment for shipment ${shipment.trackingNumber}`,
+          balanceBefore,
+          balanceAfter,
+          processedAt: new Date(),
+        });
+
+        shipment.cost.isPaid = true;
+        await shipment.save();
+
+        await createAndEmitNotification(req, {
+          userId: req.user.id,
+          type: "wallet",
+          titleAr: "خصم قيمة الشحنة",
+          titleEn: "Shipment Payment Deducted",
+          messageAr: `تم خصم ${amount} ${currency} من محفظتك لقيمة الشحنة ${shipment.trackingNumber}.`,
+          messageEn: `${amount} ${currency} was deducted from your wallet for shipment ${shipment.trackingNumber}.`,
+          metadata: {
+            transactionId: walletTransaction._id,
+            shipmentId: shipment._id,
+            trackingNumber: shipment.trackingNumber,
+            amount,
+            currency,
+            paymentMethod: "wallet",
+          },
+          updatedBalance: normalizedBalance,
+        });
+      } else {
+        if (rawAmount !== 0 && rawAmount != null) {
+          console.warn(
+            `Wallet payment selected but calculated wallet amount is zero for shipment ${shipment._id}`,
+            {
+              rawAmount,
+              baseAmount: shipment.cost.baseAmount,
+              codFee: shipment.cost.codFee,
+              expressFee: shipment.cost.expressFee,
+              packagingFee: shipment.cost.packagingFee,
+            },
+          );
+        }
+
+        shipment.cost.isPaid = true;
+        await shipment.save();
+      }
     }
+
+    await createAndEmitNotification(req, {
+      userId: req.user.id,
+      type: "shipment",
+      titleAr: "تم إنشاء الشحنة",
+      titleEn: "Shipment Created",
+      messageAr: `تم إنشاء الشحنة ${shipment.trackingNumber} بنجاح.`,
+      messageEn: `Your shipment ${shipment.trackingNumber} was created successfully.`,
+      metadata: {
+        shipmentId: shipment._id,
+        trackingNumber: shipment.trackingNumber,
+        paymentMethod: shipment.cost.paymentMethod,
+        amount: shipment.cost.amount,
+        currency: shipment.cost.currency,
+      },
+    });
 
     // Log activity
     await ActivityLog.create({
@@ -494,10 +580,17 @@ exports.createShipment = async (req, res) => {
       });
     }
 
+    const responsePayload = {
+      shipment,
+      ...(updatedWalletBalance
+        ? { balance: updatedWalletBalance }
+        : {}),
+    };
+
     res.status(201).json({
       success: true,
       message: "Shipment created successfully",
-      data: shipment,
+      data: responsePayload,
     });
   } catch (error) {
     console.error("Create shipment error:", error);

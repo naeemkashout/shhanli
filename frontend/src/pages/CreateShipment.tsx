@@ -1591,7 +1591,10 @@ export default function CreateShipment() {
       : Number(company.packagingService.internationalFeeUSD || 0);
   };
 
-  const totalCostWithFees = estimatedCost + getCodFee() + getPackagingFee();
+  const totalCostWithFees = Math.max(
+    0,
+    estimatedCost + getCodFee() + getPackagingFee(),
+  );
 
   const getPackageTypeLabel = (type: string) => {
     const typeKey = `package.${type}`;
@@ -1614,7 +1617,7 @@ export default function CreateShipment() {
   };
 
   const selectedCompany = getSelectedCompany();
-  const allowedShippingTypes = selectedCompany
+  const allowedShippingTypes: Array<"local" | "international"> = selectedCompany
     ? ([
         selectedCompany.supportsLocal ? ("local" as const) : null,
         selectedCompany.supportsInternational

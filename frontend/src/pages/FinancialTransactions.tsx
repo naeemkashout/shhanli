@@ -366,22 +366,14 @@ export default function FinancialTransactions() {
     try {
         const fontLink = "https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700&display=swap";
         const dir = isRTL ? "rtl" : "ltr";
-        const companyName = isRTL ? "شحنلي" : "ShipMe";
-        const logoSrc = "/uploads/company-logos/logo.png"; // adjust if you have another path
+        const logoSrc = "/logo.png";
 
         const fallbackLogo = '/uploads/company-logos/company-logo-1775549911206-358053182.jpg';
         const html = `
           <div lang="${language}" dir="${dir}" style="font-family: 'Tajawal', Arial, Helvetica, sans-serif; direction: ${dir}; padding:24px; background:#fff; color:#0f172a; width:800px; max-width:800px;">
             <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:20px;">
               <div style="display:flex; align-items:center; gap:12px;">
-                <span style="display:inline-flex; align-items:center; justify-content:center; width:34px; height:34px; background:#0f172a; border-radius:10px;">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="18" height="18">
-                    <path d="M3 7l9-4 9 4v10l-9 4-9-4V7z" />
-                    <path d="M3 7l9 4 9-4" />
-                    <path d="M12 3v18" />
-                  </svg>
-                </span>
-                <div style="font-weight:800; font-size:22px; color:#0f172a;">${companyName}</div>
+                <img src="/logo.png" alt="Shipme" style="width:120px; height:auto; object-fit:contain;" />
               </div>
               <div style="text-align:${isRTL ? 'left' : 'right'}; font-size:12px; color:#64748b;">${new Date().toLocaleString()}</div>
             </div>
@@ -465,8 +457,7 @@ export default function FinancialTransactions() {
     try {
       const dir = isRTL ? "rtl" : "ltr";
       const fontLink = "https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700&display=swap";
-      const companyName = isRTL ? "شحنلي" : "ShipMe";
-      const logoSrc = "/uploads/company-logos/logo.png";
+      const logoSrc = "/logo.png";
       const fallbackLogo = '/uploads/company-logos/company-logo-1775549911206-358053182.jpg';
       const html = `
         <html lang="${language}" dir="${dir}">
@@ -491,14 +482,7 @@ export default function FinancialTransactions() {
             <div class="wrapper">
               <div class="header">
                 <div style="display:flex; align-items:center; gap:12px;">
-                  <span style="display:inline-flex; align-items:center; justify-content:center; width:34px; height:34px; background:#0f172a; border-radius:10px;">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="18" height="18">
-                      <path d="M3 7l9-4 9 4v10l-9 4-9-4V7z" />
-                      <path d="M3 7l9 4 9-4" />
-                      <path d="M12 3v18" />
-                    </svg>
-                  </span>
-                  <div style="font-weight:800; font-size:22px;">${companyName}</div>
+                  <img src="/logo.png" alt="Shipme" style="width:140px; height:auto; object-fit:contain;" />
                 </div>
                 <div style="font-size:12px; color:#64748b; text-align:${isRTL ? 'left' : 'right'};">${new Date().toLocaleString()}</div>
               </div>

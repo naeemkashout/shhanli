@@ -139,6 +139,14 @@ exports.createAndEmitNotification = async (req, payload) => {
       "new-notification",
       notification,
     );
+
+    if (payload.type === "wallet") {
+      io.to(`user-room-${String(payload.userId)}`).emit("wallet-updated", {
+        notificationId: notification._id,
+        metadata: payload.metadata || {},
+        balance: payload.updatedBalance || undefined,
+      });
+    }
   }
 
   return notification;
