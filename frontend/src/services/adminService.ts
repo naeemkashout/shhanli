@@ -208,6 +208,9 @@ class AdminService {
       location?: string;
       correctedWeight?: number;
       weightAdjustmentNote?: string;
+      shippingMode?: "standard" | "express";
+      packagingRequested?: boolean;
+      paymentMethod?: "wallet" | "cod";
     },
   ): Promise<any> {
     try {

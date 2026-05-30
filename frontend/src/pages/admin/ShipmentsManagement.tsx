@@ -20,7 +20,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
-import { Search, Edit, Download, Package } from "lucide-react";
+import { Search, Edit, Download, Package, User } from "lucide-react";
 import adminService from "@/services/adminService";
 import { toast } from "sonner";
 import { io, Socket } from "socket.io-client";
@@ -46,11 +46,20 @@ export default function ShipmentsManagement() {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [selectedShipment, setSelectedShipment] = useState<any>(null);
+  const [selectedCompanyCapabilities, setSelectedCompanyCapabilities] = useState({
+    express: false,
+    packaging: false,
+    cod: false,
+  });
   const [isUpdateDialogOpen, setIsUpdateDialogOpen] = useState(false);
+  const [isDetailsOpen, setIsDetailsOpen] = useState(false);
   const [updateFormData, setUpdateFormData] = useState({
     status: "",
     correctedWeight: "",
     weightAdjustmentNote: "",
+    shippingMode: "standard",
+    packagingRequested: false,
+    paymentMethod: "wallet",
   });
 
   useEffect(() => {
@@ -154,9 +163,9 @@ export default function ShipmentsManagement() {
     }
   };
 
-  const handleUpdateStatus = (shipment: any) => {
+  const handleUpdateStatus = async (shipment: any) => {
     setSelectedShipment(shipment);
-    // حساب الحالة التالية المتاحة
+    // حساب الحالة الحالية والحالة التالية المتاحة
     const statusOrder = [
       "pending",
       "confirmed",
@@ -165,18 +174,46 @@ export default function ShipmentsManagement() {
       "delivered",
     ];
     const currentIndex = statusOrder.indexOf(shipment.status);
-    let nextStatus = "";
-    if (currentIndex > -1 && currentIndex < statusOrder.length - 1) {
-      nextStatus = statusOrder[currentIndex + 1];
+    // determine supported services from the shipment's company
+    let companyInfo = companies.find((c) => c._id === shipment.shippingCompany?.id);
+    if (!companyInfo && isCompanyAdmin) {
+      try {
+        const resp = await adminService.getMyCompany();
+        companyInfo = resp.data || resp;
+      } catch (e) {
+        // ignore, server validation will catch unsupported ops
+      }
     }
+
+    const supportsExpress = !!companyInfo?.expressService?.enabled || !!shipment?.shippingCompany?.expressService?.enabled;
+    const supportsPackaging = !!companyInfo?.packagingService?.enabled || !!shipment?.shippingCompany?.packagingService?.enabled;
+    const supportsCod = !!companyInfo?.codService?.enabled || !!shipment?.shippingCompany?.codService?.enabled;
+
+    setSelectedCompanyCapabilities({
+      express: supportsExpress,
+      packaging: supportsPackaging,
+      cod: supportsCod,
+    });
+
     setUpdateFormData({
-      status: nextStatus,
+      status: shipment.status || "",
       correctedWeight: shipment.package?.weight
         ? String(shipment.package.weight)
         : "",
       weightAdjustmentNote: shipment.weightAdjustment?.note || "",
+      shippingMode: shipment.shippingMode || "standard",
+      packagingRequested: shipment.package?.packagingRequested || false,
+      paymentMethod:
+        shipment.cost?.paymentMethod === "cod" && !supportsCod
+          ? "wallet"
+          : shipment.cost?.paymentMethod || "wallet",
     });
     setIsUpdateDialogOpen(true);
+  };
+
+  const handleOpenDetails = (shipment: any) => {
+    setSelectedShipment(shipment);
+    setIsDetailsOpen(true);
   };
 
   const handleSubmitUpdate = async () => {
@@ -187,6 +224,9 @@ export default function ShipmentsManagement() {
           ? Number(updateFormData.correctedWeight)
           : undefined,
         weightAdjustmentNote: updateFormData.weightAdjustmentNote,
+        shippingMode: updateFormData.shippingMode,
+        packagingRequested: updateFormData.packagingRequested,
+        paymentMethod: updateFormData.paymentMethod,
       });
       toast.success(
         tr(
@@ -295,7 +335,7 @@ export default function ShipmentsManagement() {
     if (selectedShipment?.status === "confirmed") {
       statusOptions = statusOptions.filter((opt) => opt.value !== "returned");
     }
-    // السماح فقط بالحالة التالية في الترتيب
+    // السماح بالحالة الحالية والحالة التالية في الترتيب
     const statusOrder = [
       "pending",
       "confirmed",
@@ -306,12 +346,24 @@ export default function ShipmentsManagement() {
     const currentIndex = statusOrder.indexOf(selectedShipment?.status || "");
     if (currentIndex > -1 && currentIndex < statusOrder.length - 1) {
       const nextStatus = statusOrder[currentIndex + 1];
-      statusOptions = statusOptions.filter((opt) => opt.value === nextStatus);
+      statusOptions = statusOptions.filter(
+        (opt) =>
+          opt.value === selectedShipment?.status || opt.value === nextStatus,
+      );
+    } else if (currentIndex > -1) {
+      // إذا لم يوجد حالة تالية، اعرض الحالة الحالية فقط
+      statusOptions = statusOptions.filter(
+        (opt) => opt.value === selectedShipment?.status,
+      );
     } else {
-      // إذا لم يوجد حالة تالية، لا تظهر خيارات
       statusOptions = [];
     }
   }
+
+  // capabilities inferred from the selected shipment's company (or from fetched company)
+  const supportsExpress = selectedCompanyCapabilities.express || !!selectedShipment?.shippingCompany?.expressService?.enabled;
+  const supportsPackaging = selectedCompanyCapabilities.packaging || !!selectedShipment?.shippingCompany?.packagingService?.enabled;
+  const supportsCod = selectedCompanyCapabilities.cod || !!selectedShipment?.shippingCompany?.codService?.enabled;
 
   return (
     <div className="space-y-6">
@@ -531,6 +583,13 @@ export default function ShipmentsManagement() {
                             >
                               <Edit className="w-4 h-4" />
                             </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleOpenDetails(shipment)}
+                            >
+                              <Package className="w-4 h-4" />
+                            </Button>
                           </div>
                         </TableCell>
                       </TableRow>
@@ -622,6 +681,54 @@ export default function ShipmentsManagement() {
               />
             </div>
             <div>
+              <Label>وضع الشحن</Label>
+              <select
+                value={updateFormData.shippingMode}
+                onChange={(e) =>
+                  setUpdateFormData({ ...updateFormData, shippingMode: e.target.value })
+                }
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+              >
+                <option value="standard">{tr("عادي", "Standard")}</option>
+                <option value="express" disabled={!supportsExpress}>
+                  {tr("سريع", "Express")}
+                  {!supportsExpress ? ` (${tr("غير مدعوم", "Not supported")})` : ""}
+                </option>
+              </select>
+            </div>
+            <div>
+              <label className="inline-flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={updateFormData.packagingRequested}
+                  onChange={(e) =>
+                    setUpdateFormData({ ...updateFormData, packagingRequested: e.target.checked })
+                  }
+                  disabled={!supportsPackaging}
+                />
+                <span className="ml-2">{tr("التغليف", "Packaging")}</span>
+                {!supportsPackaging && (
+                  <span className="text-xs text-gray-500 mr-2">{tr("غير مدعوم من شركة الشحن", "Not supported by company")}</span>
+                )}
+              </label>
+            </div>
+            <div>
+              <Label>طريقة الدفع</Label>
+              <select
+                value={updateFormData.paymentMethod}
+                onChange={(e) =>
+                  setUpdateFormData({ ...updateFormData, paymentMethod: e.target.value })
+                }
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+              >
+                <option value="wallet">{tr("محفظة", "Wallet")}</option>
+                <option value="cod" disabled={!supportsCod}>
+                  {tr("الدفع عند الاستلام", "Cash on Delivery")}
+                  {!supportsCod ? ` (${tr("غير مدعوم", "Not supported")})` : ""}
+                </option>
+              </select>
+            </div>
+            <div>
               <Label>ملاحظة تصحيح الوزن</Label>
               <Textarea
                 value={updateFormData.weightAdjustmentNote}
@@ -639,6 +746,92 @@ export default function ShipmentsManagement() {
           <DialogFooter>
             <Button onClick={handleSubmitUpdate}>تحديث الحالة</Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      {/* Details Dialog */}
+      <Dialog open={isDetailsOpen} onOpenChange={setIsDetailsOpen}>
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{tr("تفاصيل الشحنة", "Shipment Details")}</DialogTitle>
+          </DialogHeader>
+          {selectedShipment && (
+            <div className="space-y-6">
+              <div className="flex items-center justify-center">
+                <Badge className={`${getStatusColor(selectedShipment.status)} text-base px-4 py-2`}>
+                  {getStatusLabel(selectedShipment.status)}
+                </Badge>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-3">
+                  <h4 className="font-semibold text-gray-900 flex items-center gap-2">
+                    <User className="w-4 h-4" /> {tr("معلومات المرسل", "Sender Information")}
+                  </h4>
+                  <div className="space-y-2 text-sm">
+                    <p><span className="font-medium">{tr("الاسم:", "Name:")}</span> {selectedShipment.sender?.name || "-"}</p>
+                    <p><span className="font-medium">{tr("الهاتف:", "Phone:")}</span> {selectedShipment.sender?.phone || "-"}</p>
+                    <p><span className="font-medium">{tr("الدولة:", "Country:")}</span> {selectedShipment.sender?.country || "-"}</p>
+                    <p><span className="font-medium">{tr("المدينة:", "City:")}</span> {selectedShipment.sender?.city || "-"}</p>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <h4 className="font-semibold text-gray-900 flex items-center gap-2">
+                    <User className="w-4 h-4" /> {tr("معلومات المستلمين", "Receivers Information")}
+                  </h4>
+                  <div className="space-y-4 text-sm">
+                    {(selectedShipment.receivers || []).map((r: any, idx: number) => (
+                      <div key={idx} className="border-b last:border-b-0 pb-2 last:pb-0">
+                        <p><span className="font-medium">{tr("الاسم:", "Name:")}</span> {r.name || "-"}</p>
+                        <p><span className="font-medium">{tr("الهاتف:", "Phone:")}</span> {r.phone || "-"}</p>
+                        <p><span className="font-medium">{tr("الدولة:", "Country:")}</span> {r.country || "-"}</p>
+                        <p><span className="font-medium">{tr("المدينة:", "City:")}</span> {r.city || "-"}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <h4 className="font-semibold text-gray-900 flex items-center gap-2">
+                  <Package className="w-4 h-4" /> {tr("تفاصيل الطرد", "Package Details")}
+                </h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+                  <p><span className="font-medium">{tr("النوع:", "Type:")}</span> {selectedShipment.package?.type || "-"}</p>
+                  <p><span className="font-medium">{tr("الوزن:", "Weight:")}</span> {selectedShipment.package?.weight ? `${selectedShipment.package.weight} kg` : "-"}</p>
+                  <p><span className="font-medium">{tr("القيمة:", "Value:")}</span> {selectedShipment.package?.value ? `${selectedShipment.package.value} ${selectedShipment.package.currency || ""}` : "-"}</p>
+                  <p><span className="font-medium">{tr("شركة الشحن:", "Company:")}</span> {selectedShipment.shippingCompany?.name || "-"}</p>
+                </div>
+                <p className="text-sm"><span className="font-medium">{tr("الوصف:", "Description:")}</span> {selectedShipment.package?.description || "-"}</p>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-sm">
+                <p>
+                  <span className="font-medium">{tr("الشحن السريع:", "Express Shipping:")}</span>{" "}
+                  {selectedShipment.shippingMode === "express"
+                    ? tr("تم الطلب", "Requested")
+                    : tr("لم يتم الطلب", "Not requested")}
+                </p>
+                <p>
+                  <span className="font-medium">{tr("التغليف:", "Packaging:")}</span>{" "}
+                  {selectedShipment.package?.packagingRequested
+                    ? tr("تم الطلب", "Requested")
+                    : tr("لم يتم الطلب", "Not requested")}
+                </p>
+                <p>
+                  <span className="font-medium">{tr("الدفع عند الاستلام:", "Cash on Delivery:")}</span>{" "}
+                  {selectedShipment.cost?.paymentMethod === "cod"
+                    ? tr("تم الطلب", "Requested")
+                    : tr("لم يتم الطلب", "Not requested")}
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+                <p><span className="font-medium">{tr("التكلفة:", "Cost:")}</span> {selectedShipment.cost?.amount || "-"} {selectedShipment.cost?.currency || ""}</p>
+                <p><span className="font-medium">{tr("تاريخ الإنشاء:", "Created At:")}</span> {selectedShipment.createdAt ? new Date(selectedShipment.createdAt).toLocaleString() : "-"}</p>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>

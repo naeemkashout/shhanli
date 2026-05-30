@@ -36,23 +36,42 @@ exports.updateProfile = async (req, res) => {
     } = req.body;
 
     const user = await User.findById(req.user.id);
+    const oldProfile = {
+      name: user.name,
+      phone: user.phone,
+      address: user.address,
+      businessType: user.businessType,
+      companyName: user.companyName,
+      commercialRegistrationNumber: user.commercialRegistrationNumber,
+    };
 
-    if (name) user.name = name;
-    if (phone) user.phone = phone;
+    if (name !== undefined) user.name = name;
+    if (phone !== undefined) user.phone = phone;
     if (address !== undefined) user.address = address;
-    if (businessType) user.businessType = businessType;
+    if (businessType !== undefined) user.businessType = businessType;
     if (companyName !== undefined) user.companyName = companyName;
     if (commercialRegistrationNumber !== undefined)
       user.commercialRegistrationNumber = commercialRegistrationNumber;
 
     await user.save();
 
-    // Log activity
+    // Log activity with previous profile snapshot
     await ActivityLog.create({
       userId: user._id,
       action: "update-profile",
       category: "profile",
       description: "User updated profile",
+      metadata: {
+        oldProfile,
+        newProfile: {
+          name: user.name,
+          phone: user.phone,
+          address: user.address,
+          businessType: user.businessType,
+          companyName: user.companyName,
+          commercialRegistrationNumber: user.commercialRegistrationNumber,
+        },
+      },
       ipAddress: req.ip,
       userAgent: req.headers["user-agent"],
     });

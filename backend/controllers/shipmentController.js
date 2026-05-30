@@ -131,6 +131,10 @@ const resolveShipmentOffer = (company, offerId) => {
   );
 };
 
+// Export helper utilities for use by other controllers (admin recalculation, etc.)
+exports.resolveInternationalPerKgRate = resolveInternationalPerKgRate;
+exports.resolveShipmentOffer = resolveShipmentOffer;
+
 // @desc    Create new shipment
 // @route   POST /api/shipments
 // @access  Private

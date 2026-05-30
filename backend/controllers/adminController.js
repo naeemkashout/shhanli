@@ -175,6 +175,116 @@ exports.updateCompany = async (req, res) => {
   }
 };
 
+// @desc    Get shipping company by id
+// @route   GET /api/admin/companies/:id
+// @access  Private/Admin
+exports.getCompanyById = async (req, res) => {
+  try {
+    const company = await ShippingCompany.findById(req.params.id).populate(
+      "ownerUserId",
+      "name email phone",
+    );
+
+    if (!company) {
+      return res.status(404).json({
+        success: false,
+        message: "Shipping company not found",
+      });
+    }
+
+    res.json({
+      success: true,
+      data: company,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Error fetching shipping company",
+      error: error.message,
+    });
+  }
+};
+
+// @desc    Create or update a company admin account
+// @route   POST /api/admin/companies/:id/admin-account
+// @access  Private/Admin
+exports.upsertCompanyAdminAccount = async (req, res) => {
+  try {
+    const companyId = req.params.id;
+    const { name, email, phone, password, resetPassword } = req.body || {};
+
+    const company = await ShippingCompany.findById(companyId);
+    if (!company) {
+      return res.status(404).json({
+        success: false,
+        message: "Shipping company not found",
+      });
+    }
+
+    let companyAdmin = await User.findOne({
+      role: "company-admin",
+      shippingCompanyId: companyId,
+    });
+
+    if (!companyAdmin) {
+      if (!password) {
+        return res.status(400).json({
+          success: false,
+          message: "Password is required to create company admin account",
+        });
+      }
+
+      companyAdmin = new User({
+        name: String(name || company.name).trim(),
+        email: String(email || "").trim().toLowerCase(),
+        phone: String(phone || "").trim(),
+        password: String(password),
+        role: "company-admin",
+        shippingCompanyId: companyId,
+        isVerified: true,
+      });
+    } else {
+      if (name !== undefined) companyAdmin.name = String(name).trim();
+      if (email !== undefined) companyAdmin.email = String(email).trim().toLowerCase();
+      if (phone !== undefined) companyAdmin.phone = String(phone).trim();
+
+      if (password) {
+        companyAdmin.password = String(password);
+      } else if (resetPassword) {
+        const tempPassword = `Shipme${Math.floor(Math.random() * 900000 + 100000)}`;
+        companyAdmin.password = tempPassword;
+      }
+    }
+
+    await companyAdmin.save();
+
+    res.json({
+      success: true,
+      message: "Company admin account saved successfully",
+      data: {
+        id: companyAdmin._id,
+        name: companyAdmin.name,
+        email: companyAdmin.email,
+        phone: companyAdmin.phone,
+      },
+    });
+  } catch (error) {
+    if (error.code === 11000) {
+      return res.status(400).json({
+        success: false,
+        message: "Email or phone already in use",
+        error: error.message,
+      });
+    }
+
+    res.status(500).json({
+      success: false,
+      message: "Error saving company admin account",
+      error: error.message,
+    });
+  }
+};
+
 // @desc    Get current company for company-admin
 // @route   GET /api/admin/companies/me
 // @access  Private/CompanyAdmin
@@ -425,6 +535,121 @@ exports.getDashboardStats = async (req, res) => {
       SYP: revenueData.find((r) => r._id === "SYP")?.total || 0,
     };
 
+    const companyRevenueData = await Transaction.aggregate([
+      {
+        $match: {
+          type: "payment",
+          status: "completed",
+          createdAt: { $gte: daysAgo },
+          relatedShipment: { $exists: true, $ne: null },
+        },
+      },
+      {
+        $lookup: {
+          from: "shipments",
+          localField: "relatedShipment",
+          foreignField: "_id",
+          as: "shipment",
+        },
+      },
+      { $unwind: "$shipment" },
+      {
+        $group: {
+          _id: "$shipment.shippingCompany.id",
+          companyName: { $first: "$shipment.shippingCompany.name" },
+          revenueUSD: {
+            $sum: {
+              $cond: [{ $eq: ["$currency", "USD"] }, "$amount", 0],
+            },
+          },
+          revenueSYP: {
+            $sum: {
+              $cond: [{ $eq: ["$currency", "SYP"] }, "$amount", 0],
+            },
+          },
+          transactionsCount: { $sum: 1 },
+          shipments: { $addToSet: "$relatedShipment" },
+          users: { $addToSet: "$userId" },
+        },
+      },
+      {
+        $project: {
+          _id: 0,
+          companyId: "$_id",
+          companyName: 1,
+          revenue: {
+            USD: "$revenueUSD",
+            SYP: "$revenueSYP",
+          },
+          transactionsCount: 1,
+          shipmentsCount: { $size: "$shipments" },
+          usersCount: { $size: "$users" },
+        },
+      },
+      { $sort: { "revenue.USD": -1, "revenue.SYP": -1 } },
+    ]);
+
+    const dailyRevenueData = await Transaction.aggregate([
+      {
+        $match: {
+          type: "payment",
+          status: "completed",
+          createdAt: { $gte: daysAgo },
+        },
+      },
+      {
+        $project: {
+          currency: 1,
+          amount: 1,
+          date: {
+            $dateToString: { format: "%Y-%m-%d", date: "$createdAt" },
+          },
+        },
+      },
+      {
+        $group: {
+          _id: { date: "$date", currency: "$currency" },
+          total: { $sum: "$amount" },
+        },
+      },
+      {
+        $group: {
+          _id: "$_id.date",
+          values: {
+            $push: {
+              currency: "$_id.currency",
+              total: "$total",
+            },
+          },
+        },
+      },
+      {
+        $project: {
+          _id: 0,
+          date: "$_id",
+          USD: {
+            $reduce: {
+              input: "$values",
+              initialValue: 0,
+              in: {
+                $cond: [{ $eq: ["$$this.currency", "USD"] }, "$$this.total", "$$value"],
+              },
+            },
+          },
+          SYP: {
+            $reduce: {
+              input: "$values",
+              initialValue: 0,
+              in: {
+                $cond: [{ $eq: ["$$this.currency", "SYP"] }, "$$this.total", "$$value"],
+              },
+            },
+          },
+        },
+      },
+      { $sort: { date: 1 } },
+    ]);
+
     // Recent activities
     const recentActivities = await ActivityLog.find()
       .populate("userId", "name email")
@@ -447,6 +672,8 @@ exports.getDashboardStats = async (req, res) => {
           new: newShipments,
         },
         revenue,
+        companyRevenue: companyRevenueData,
+        dailyRevenue: dailyRevenueData,
         recentActivities,
       },
     });
@@ -552,7 +779,19 @@ exports.getAllUsers = async (req, res) => {
 // @access  Private/Admin
 exports.updateUser = async (req, res) => {
   try {
-    const { isActive, role, balance } = req.body;
+    const {
+      name,
+      email,
+      phone,
+      address,
+      businessType,
+      companyName,
+      commercialRegistrationNumber,
+      isActive,
+      role,
+      shippingCompanyId,
+      balance,
+    } = req.body;
 
     const user = await User.findById(req.params.id);
     if (!user) {
@@ -562,8 +801,31 @@ exports.updateUser = async (req, res) => {
       });
     }
 
+    const oldProfile = {
+      name: user.name,
+      email: user.email,
+      phone: user.phone,
+      address: user.address,
+      businessType: user.businessType,
+      companyName: user.companyName,
+      commercialRegistrationNumber: user.commercialRegistrationNumber,
+      isActive: user.isActive,
+      role: user.role,
+      shippingCompanyId: user.shippingCompanyId,
+      balance: user.balance,
+    };
+
+    if (name !== undefined) user.name = name;
+    if (email !== undefined) user.email = email;
+    if (phone !== undefined) user.phone = phone;
+    if (address !== undefined) user.address = address;
+    if (businessType !== undefined) user.businessType = businessType;
+    if (companyName !== undefined) user.companyName = companyName;
+    if (commercialRegistrationNumber !== undefined)
+      user.commercialRegistrationNumber = commercialRegistrationNumber;
     if (isActive !== undefined) user.isActive = isActive;
     if (role) user.role = role;
+    if (shippingCompanyId !== undefined) user.shippingCompanyId = shippingCompanyId;
     if (balance) {
       if (balance.USD !== undefined) user.balance.USD = balance.USD;
       if (balance.SYP !== undefined) user.balance.SYP = balance.SYP;
@@ -579,7 +841,22 @@ exports.updateUser = async (req, res) => {
       description: `Admin updated user ${user.email}`,
       targetId: user._id,
       targetModel: "User",
-      metadata: { changes: req.body },
+      metadata: {
+        oldProfile,
+        newProfile: {
+          name: user.name,
+          email: user.email,
+          phone: user.phone,
+          address: user.address,
+          businessType: user.businessType,
+          companyName: user.companyName,
+          commercialRegistrationNumber: user.commercialRegistrationNumber,
+          isActive: user.isActive,
+          role: user.role,
+          shippingCompanyId: user.shippingCompanyId,
+          balance: user.balance,
+        },
+      },
     });
 
     res.json({
@@ -1153,7 +1430,7 @@ exports.reviewEditRequest = async (req, res) => {
 // @access  Private/Admin
 exports.updateShipmentStatus = async (req, res) => {
   try {
-    const { status, note, location } = req.body;
+    const { status, note, location, shippingMode, packagingRequested, paymentMethod, correctedWeight, weightAdjustmentNote } = req.body;
     const shipment = await Shipment.findById(req.params.id);
     if (!shipment) {
       return res.status(404).json({
@@ -1182,12 +1459,26 @@ exports.updateShipmentStatus = async (req, res) => {
       });
     }
 
-    // لا يمكن اختيار نفس الحالة الحالية
+    const weightChanged =
+      typeof correctedWeight !== "undefined" &&
+      correctedWeight !== null &&
+      Number(correctedWeight) !== Number(shipment.package?.weight || 0);
+
+    // إذا بقيت نفس الحالة، اسمح فقط إذا غيّر المستخدم الوزن أو خياراً آخر متعلقاً بالتكلفة
     if (shipment.status === status) {
-      return res.status(400).json({
-        success: false,
-        message: "لا يمكن اختيار نفس حالة الشحنة الحالية.",
-      });
+      const willRecalcCost =
+        weightChanged ||
+        shippingMode ||
+        typeof packagingRequested !== "undefined" ||
+        paymentMethod;
+
+      if (!willRecalcCost) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "لا يمكن اختيار نفس حالة الشحنة الحالية دون إجراء أي تغيير على الوزن أو خيارات الشحن.",
+        });
+      }
     }
 
     // لا يمكن اختيار cancelled يدوياً
@@ -1216,6 +1507,257 @@ exports.updateShipmentStatus = async (req, res) => {
       updatedBy: req.user.id,
       timestamp: new Date(),
     });
+
+    // Handle corrected weight (weight adjustment) if provided
+    if (typeof correctedWeight !== "undefined" && correctedWeight !== null) {
+      const newWeight = Number(correctedWeight);
+      if (Number.isNaN(newWeight) || newWeight <= 0) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid corrected weight",
+        });
+      }
+
+      const originalWeight = shipment.package?.weight || 0;
+      if (Math.abs(originalWeight - newWeight) > 0.0001) {
+        shipment.weightAdjustment = {
+          ...(shipment.weightAdjustment || {}),
+          isAdjusted: true,
+          originalWeight: originalWeight,
+          correctedWeight: newWeight,
+          note: String(weightAdjustmentNote || "").trim(),
+          adjustedBy: req.user.id,
+          adjustedAt: new Date(),
+          balanceDeduction: {
+            ...(shipment.weightAdjustment?.balanceDeduction || {}),
+            required: false,
+            amount: 0,
+            currency: shipment.cost?.currency || "",
+            status:
+              shipment.weightAdjustment?.balanceDeduction?.status ||
+              "not-required",
+            note: shipment.weightAdjustment?.balanceDeduction?.note || "",
+          },
+        };
+
+        // Update package weight to the corrected value so subsequent recalculation uses it
+        shipment.package = {
+          ...(shipment.package || {}),
+          weight: newWeight,
+        };
+      }
+    }
+
+    // Allow updating shipment options: shippingMode (standard|express), packagingRequested, paymentMethod (wallet|cod), correctedWeight
+    const shouldRecalcCost =
+      weightChanged ||
+      shippingMode ||
+      typeof packagingRequested !== "undefined" ||
+      paymentMethod;
+    if (shouldRecalcCost) {
+        const ShippingCompany = require("../models/ShippingCompany");
+        const shippingCompany = await ShippingCompany.findById(shipment.shippingCompany?.id);
+        if (!shippingCompany) {
+          return res.status(400).json({ success: false, message: "Associated shipping company not found" });
+        }
+
+        // Validate express support
+        const newShippingMode = shippingMode || shipment.shippingMode || "standard";
+        if (newShippingMode === "express" && !shippingCompany.expressService?.enabled) {
+          return res.status(400).json({ success: false, message: "Selected company does not support express shipping" });
+        }
+
+        // Validate packaging
+        const newPackagingRequested = typeof packagingRequested !== "undefined" ? Boolean(packagingRequested) : (shipment.package?.packagingRequested || false);
+        if (newPackagingRequested && !shippingCompany.packagingService?.enabled) {
+          return res.status(400).json({ success: false, message: "Selected company does not support packaging service" });
+        }
+
+        // Validate payment method (cod)
+        const newPaymentMethod = paymentMethod || shipment.cost?.paymentMethod || "wallet";
+        if (newPaymentMethod === "cod" && !shippingCompany.codService?.enabled) {
+          return res.status(400).json({ success: false, message: "Selected company does not support cash on delivery" });
+        }
+
+        // Recalculate costs similar to createShipment
+        const Shipment = require("../models/Shipment");
+        const length = shipment.package?.length || 0;
+        const width = shipment.package?.width || 0;
+        const height = shipment.package?.height || 0;
+        const actualWeight = shipment.package?.weight || 0;
+        const volumetricDivisor = shipment.cost?.volumetricDivisor || shippingCompany.volumetricDivisor || 6000;
+        const volumetricWeight = length && width && height ? (length * width * height) / volumetricDivisor : 0;
+        const billingWeight = Math.max(actualWeight, volumetricWeight);
+        const firstReceiverCountry = shipment.receivers?.[0]?.country;
+        const resolveInternationalPerKgRate = require("./shipmentController").resolveInternationalPerKgRate;
+        const internationalRate = resolveInternationalPerKgRate(shippingCompany, firstReceiverCountry, billingWeight);
+        const pricePerKg = shipment.shippingType === "international" ? internationalRate.rate : Number(shippingCompany.pricing?.localPerKgSYP || 0);
+
+        const originalCostAmount = Number(shipment.cost?.amount || 0);
+        const originalPaymentMethod = String(shipment.cost?.paymentMethod || "wallet").trim().toLowerCase();
+        const originalCurrency = shipment.cost?.currency || (shipment.shippingType === "international" ? "USD" : "SYP");
+
+        // Try to resolve an offer if exists
+        const resolveShipmentOffer = require("./shipmentController").resolveShipmentOffer;
+        const selectedOffer = resolveShipmentOffer(shippingCompany, shipment.offerId);
+
+        const baseAmount = selectedOffer
+          ? Number(
+              shipment.shippingType === "international"
+                ? (selectedOffer.internationalPriceUSD ?? selectedOffer.internationalPrice ?? 0)
+                : (selectedOffer.localPriceSYP ?? selectedOffer.localPrice ?? 0),
+            )
+          : billingWeight * pricePerKg;
+
+        const codFee = newPaymentMethod === "cod"
+          ? Number(
+              selectedOffer
+                ? shipment.shippingType === "international"
+                  ? selectedOffer.codFeeUSD || 0
+                  : (selectedOffer.codFeeSYP ?? selectedOffer.codFee ?? 0)
+                : shipment.shippingType === "international"
+                  ? shippingCompany.codService?.internationalFeeUSD || 0
+                  : shippingCompany.codService?.localFeeSYP || 0,
+            )
+          : 0;
+
+        const expressFee = newShippingMode === "express"
+          ? Number(
+              selectedOffer
+                ? shipment.shippingType === "international"
+                  ? selectedOffer.expressFeeUSD || 0
+                  : selectedOffer.expressFeeSYP || 0
+                : shipment.shippingType === "international"
+                  ? shippingCompany.expressService?.internationalFeeUSD || 0
+                  : shippingCompany.expressService?.localFeeSYP || 0,
+            )
+          : 0;
+
+        const packagingFee = newPackagingRequested && shippingCompany.packagingService?.enabled
+          ? Number(
+              shipment.shippingType === "international"
+                ? shippingCompany.packagingService?.internationalFeeUSD || 0
+                : shippingCompany.packagingService?.localFeeSYP || 0,
+            )
+          : 0;
+
+        const totalAmount = baseAmount + codFee + expressFee + packagingFee;
+        const safeTotalAmount = Number(totalAmount || 0) < 0 ? 0 : Number(totalAmount || 0);
+        const costCurrency = shipment.shippingType === "international" ? "USD" : "SYP";
+        let additionalWalletDeduction = 0;
+
+        if (newPaymentMethod === "wallet") {
+          additionalWalletDeduction = safeTotalAmount;
+          if (originalPaymentMethod === "wallet") {
+            additionalWalletDeduction = safeTotalAmount - originalCostAmount;
+          }
+          additionalWalletDeduction = Number(additionalWalletDeduction || 0);
+        }
+
+        // Apply updates
+        shipment.shippingMode = newShippingMode;
+        shipment.package = {
+          ...(shipment.package || {}),
+          packagingRequested: newPackagingRequested,
+        };
+        shipment.cost = {
+          ...(shipment.cost || {}),
+          amount: safeTotalAmount,
+          baseAmount,
+          codFee,
+          expressFee,
+          packagingFee,
+          currency: costCurrency,
+          paymentMethod: newPaymentMethod,
+          volumetricDivisor,
+          volumetricWeight,
+          actualWeight,
+          billingWeight,
+        };
+
+        if (additionalWalletDeduction > 0) {
+          const user = await User.findById(shipment.userId);
+          if (!user) {
+            return res.status(404).json({ success: false, message: "User not found for this shipment" });
+          }
+
+          const userBalance = Number(user.balance?.[costCurrency] || 0);
+          if (userBalance < additionalWalletDeduction) {
+            return res.status(400).json({
+              success: false,
+              message:
+                "Insufficient wallet balance to apply the updated shipment amount after weight correction.",
+            });
+          }
+
+          const balanceBefore = userBalance;
+          const updatedUser = await User.findOneAndUpdate(
+            {
+              _id: user._id,
+              [`balance.${costCurrency}`]: { $gte: additionalWalletDeduction },
+            },
+            { $inc: { [`balance.${costCurrency}`]: -additionalWalletDeduction } },
+            { new: true, runValidators: true },
+          );
+
+          if (!updatedUser) {
+            return res.status(500).json({
+              success: false,
+              message: "Unable to update wallet balance for the shipment user.",
+            });
+          }
+
+          const balanceAfter = Number(updatedUser.balance?.[costCurrency] || 0);
+          const normalizedBalance = {
+            USD: Number(updatedUser.balance?.USD || 0),
+            SYP: Number(updatedUser.balance?.SYP || 0),
+          };
+
+          await Transaction.create({
+            userId: user._id,
+            type: "payment",
+            amount: additionalWalletDeduction,
+            currency: costCurrency,
+            status: "completed",
+            method: "wallet",
+            relatedShipment: shipment._id,
+            description: `Additional deduction for shipment ${shipment.trackingNumber} after weight correction`,
+            balanceBefore,
+            balanceAfter,
+            processedBy: req.user.id,
+            processedAt: new Date(),
+          });
+
+          await createAndEmitNotification(req, {
+            userId: user._id,
+            type: "wallet",
+            titleAr: "تم خصم قيمة جديدة بعد تصحيح الوزن",
+            titleEn: "Additional Shipment Deduction",
+            messageAr: `تم خصم ${additionalWalletDeduction} ${costCurrency} من محفظتك بعد تصحيح وزن الشحنة ${shipment.trackingNumber}.`,
+            messageEn: `${additionalWalletDeduction} ${costCurrency} was deducted from your wallet after weight correction for shipment ${shipment.trackingNumber}.`,
+            metadata: {
+              shipmentId: shipment._id,
+              trackingNumber: shipment.trackingNumber,
+              amount: additionalWalletDeduction,
+              currency: costCurrency,
+              paymentMethod: "wallet",
+              reason: "weight-correction",
+            },
+            updatedBalance: normalizedBalance,
+          });
+
+          shipment.cost.isPaid = true;
+          if (shipment.weightAdjustment) {
+            shipment.weightAdjustment.balanceDeduction = {
+              required: true,
+              amount: additionalWalletDeduction,
+              currency: costCurrency,
+              status: "deducted",
+              note: "تم خصم الفرق بعد تصحيح الوزن.",
+            };
+          }
+        }
+      }
 
     // إذا تم تغيير الحالة إلى 'in-transit' من قبل أي مستخدم غير مالك المنصة، يتم رفض طلب الإلغاء تلقائيًا
     const isPlatformOwner =
@@ -1403,14 +1945,166 @@ exports.exportToExcel = async (req, res) => {
       ];
 
       shipments.forEach((shipment) => {
+        const userName = shipment.userId ? shipment.userId.name || shipment.userId.email || "-" : "-";
+        const senderCity = shipment.sender?.city || shipment.sender?.state || shipment.sender?.country || "-";
+        const senderCountry = shipment.sender?.country || "-";
+        const receiver = Array.isArray(shipment.receivers) && shipment.receivers.length > 0 ? shipment.receivers[0] : null;
+        const receiverCity = receiver?.city || receiver?.state || receiver?.country || "-";
+        const receiverCountry = receiver?.country || "-";
+        const costText = (shipment.cost && shipment.cost.amount !== undefined)
+          ? `${shipment.cost.amount} ${shipment.cost.currency || ""}`
+          : "-";
+        const createdAtText = shipment.createdAt ? new Date(shipment.createdAt).toISOString() : "-";
+
         worksheet.addRow({
           trackingNumber: shipment.trackingNumber,
-          user: shipment.userId.name,
-          from: `${shipment.sender.city}, ${shipment.sender.country}`,
-          to: `${shipment.receiver.city}, ${shipment.receiver.country}`,
-          status: shipment.status,
-          cost: `${shipment.cost.amount} ${shipment.cost.currency}`,
-          createdAt: shipment.createdAt.toISOString(),
+          user: userName,
+          from: `${senderCity}, ${senderCountry}`,
+          to: `${receiverCity}, ${receiverCountry}`,
+          status: shipment.status || "-",
+          cost: costText,
+          createdAt: createdAtText,
+        });
+      });
+    } else if (type === "transactions") {
+      // Export transactions with optional filters
+      const {
+        transactionType,
+        status: txStatus,
+        paymentMethod,
+        currency,
+        dateFrom,
+        dateTo,
+        search,
+      } = req.query;
+
+      const query = {};
+      if (transactionType) query.type = transactionType;
+      if (txStatus) query.status = txStatus;
+      if (paymentMethod) query.method = paymentMethod;
+      if (currency && currency !== "all") query.currency = currency;
+      if (dateFrom || dateTo) query.createdAt = {};
+      if (dateFrom) query.createdAt.$gte = new Date(dateFrom);
+      if (dateTo) query.createdAt.$lte = new Date(dateTo);
+      if (search) {
+        // search in reference or user email/name
+        query.$or = [
+          { reference: { $regex: search, $options: "i" } },
+        ];
+      }
+
+      const transactions = await Transaction.find(query)
+        .populate("userId", "name email phone")
+        .populate("relatedShipment", "trackingNumber shippingCompany")
+        .sort({ createdAt: -1 });
+
+      worksheet.columns = [
+        { header: "ID", key: "id", width: 25 },
+        { header: "Type", key: "type", width: 15 },
+        { header: "Status", key: "status", width: 15 },
+        { header: "Amount", key: "amount", width: 15 },
+        { header: "Currency", key: "currency", width: 10 },
+        { header: "Method", key: "method", width: 15 },
+        { header: "Reference", key: "reference", width: 30 },
+        { header: "User", key: "user", width: 30 },
+        { header: "Shipment", key: "shipment", width: 20 },
+        { header: "Created At", key: "createdAt", width: 20 },
+      ];
+
+      transactions.forEach((tx) => {
+        const userText = tx.userId ? tx.userId.name || tx.userId.email || "-" : "-";
+        const shipmentText = tx.relatedShipment
+          ? tx.relatedShipment.trackingNumber || "-"
+          : "-";
+        worksheet.addRow({
+          id: tx._id.toString(),
+          type: tx.type,
+          status: tx.status,
+          amount: tx.amount,
+          currency: tx.currency,
+          method: tx.method,
+          reference: tx.reference || "",
+          user: userText,
+          shipment: shipmentText,
+          createdAt: tx.createdAt ? tx.createdAt.toISOString() : "",
+        });
+      });
+    } else if (type === "company-settlement") {
+      // Export settlement transactions for a specific company or scope
+      const {
+        companyId,
+        paymentMethod,
+        currency,
+        dateFrom,
+        dateTo,
+        shipmentStatus,
+      } = req.query;
+
+      const match = {
+        type: "payment",
+        status: "completed",
+      };
+      if (paymentMethod) match.method = paymentMethod;
+      if (currency && currency !== "all") match.currency = currency;
+      if (dateFrom || dateTo) match.createdAt = {};
+      if (dateFrom) match.createdAt.$gte = new Date(dateFrom);
+      if (dateTo) match.createdAt.$lte = new Date(dateTo);
+
+      // Aggregate transactions joined with shipments, filter by shipping company id if provided
+      const settlementRows = await Transaction.aggregate([
+        { $match: match },
+        {
+          $lookup: {
+            from: "shipments",
+            localField: "relatedShipment",
+            foreignField: "_id",
+            as: "shipment",
+          },
+        },
+        { $unwind: { path: "$shipment", preserveNullAndEmptyArrays: true } },
+        {
+          $match: companyId
+            ? { "shipment.shippingCompany.id": companyId }
+            : {},
+        },
+        {
+          $project: {
+            reference: 1,
+            amount: 1,
+            currency: 1,
+            method: 1,
+            createdAt: 1,
+            userId: 1,
+            trackingNumber: "$shipment.trackingNumber",
+            companyId: "$shipment.shippingCompany.id",
+            companyName: "$shipment.shippingCompany.name",
+            shipmentStatus: "$shipment.status",
+          },
+        },
+        { $sort: { createdAt: -1 } },
+      ]);
+
+      worksheet.columns = [
+        { header: "Reference", key: "reference", width: 30 },
+        { header: "Amount", key: "amount", width: 15 },
+        { header: "Currency", key: "currency", width: 10 },
+        { header: "Method", key: "method", width: 15 },
+        { header: "Company", key: "company", width: 30 },
+        { header: "Tracking", key: "tracking", width: 20 },
+        { header: "Shipment Status", key: "shipmentStatus", width: 20 },
+        { header: "Created At", key: "createdAt", width: 20 },
+      ];
+
+      settlementRows.forEach((r) => {
+        worksheet.addRow({
+          reference: r.reference || "",
+          amount: r.amount,
+          currency: r.currency,
+          method: r.method,
+          company: r.companyName || r.companyId || "-",
+          tracking: r.trackingNumber || "-",
+          shipmentStatus: r.shipmentStatus || "-",
+          createdAt: r.createdAt ? new Date(r.createdAt).toISOString() : "",
         });
       });
     }

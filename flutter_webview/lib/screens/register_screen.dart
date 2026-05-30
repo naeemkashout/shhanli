@@ -48,16 +48,21 @@ class _RegisterScreenState extends State<RegisterScreen> {
         phone: _phoneController.text,
         password: _passwordController.text,
       );
+      if (!mounted) return;
       widget.onRegistered();
     } catch (error) {
-      final message = error is ApiException ? error.message : 'Unable to register';
+      if (!mounted) return;
+      final message =
+          error is ApiException ? error.message : 'Unable to register';
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(message)),
       );
     } finally {
-      setState(() {
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
 

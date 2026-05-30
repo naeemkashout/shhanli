@@ -40,6 +40,13 @@ export default function UsersManagement() {
   const [selectedUser, setSelectedUser] = useState<any>(null);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [editFormData, setEditFormData] = useState({
+    name: "",
+    email: "",
+    phone: "",
+    businessType: "individual",
+    companyName: "",
+    commercialRegistrationNumber: "",
+    address: "",
     isActive: true,
     role: "user",
     balanceUSD: 0,
@@ -61,6 +68,7 @@ export default function UsersManagement() {
     try {
       setIsLoading(true);
       const response = await adminService.getAllUsers({
+        role: "user",
         search,
         companyId: isPlatformAdmin ? companyId || undefined : undefined,
         page,
@@ -89,10 +97,17 @@ export default function UsersManagement() {
   const handleEditUser = (user: any) => {
     setSelectedUser(user);
     setEditFormData({
+      name: user.name || "",
+      email: user.email || "",
+      phone: user.phone || "",
+      businessType: user.businessType || "individual",
+      companyName: user.companyName || "",
+      commercialRegistrationNumber: user.commercialRegistrationNumber || "",
+      address: user.address || "",
       isActive: user.isActive,
       role: user.role,
-      balanceUSD: user.balance.USD,
-      balanceSYP: user.balance.SYP,
+      balanceUSD: user.balance?.USD || 0,
+      balanceSYP: user.balance?.SYP || 0,
       shippingCompanyId:
         typeof user.shippingCompanyId === "string"
           ? user.shippingCompanyId
@@ -104,6 +119,14 @@ export default function UsersManagement() {
   const handleUpdateUser = async () => {
     try {
       await adminService.updateUser(selectedUser._id, {
+        name: editFormData.name,
+        email: editFormData.email,
+        phone: editFormData.phone,
+        businessType: editFormData.businessType,
+        companyName: editFormData.companyName,
+        commercialRegistrationNumber:
+          editFormData.commercialRegistrationNumber,
+        address: editFormData.address,
         isActive: editFormData.isActive,
         role: ["admin", "super-admin"].includes(user?.role || "")
           ? editFormData.role
@@ -170,7 +193,7 @@ export default function UsersManagement() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-bold text-gray-900">
-          {tr("إدارة المستخدمين", "Users Management")}
+          {tr("إدارة العملاء", "Customers Management")}
         </h1>
         <Button onClick={handleExportUsers} variant="outline">
           <Download className="w-4 h-4 mr-2" />
@@ -228,6 +251,10 @@ export default function UsersManagement() {
                     <TableHead>{tr("الاسم", "Name")}</TableHead>
                     <TableHead>{tr("البريد الإلكتروني", "Email")}</TableHead>
                     <TableHead>{tr("الهاتف", "Phone")}</TableHead>
+                    <TableHead>{tr("نوع الحساب", "Account Type")}</TableHead>
+                    <TableHead>{tr("الشركة", "Company")}</TableHead>
+                    <TableHead>{tr("السجل التجاري", "Commercial Registration")}</TableHead>
+                    <TableHead>{tr("العنوان", "Address")}</TableHead>
                     <TableHead>{tr("الرصيد (USD)", "Balance (USD)")}</TableHead>
                     <TableHead>{tr("الرصيد (SYP)", "Balance (SYP)")}</TableHead>
                     <TableHead>
@@ -244,6 +271,12 @@ export default function UsersManagement() {
                       <TableCell className="font-medium">{user.name}</TableCell>
                       <TableCell>{user.email}</TableCell>
                       <TableCell>{user.phone}</TableCell>
+                      <TableCell>{user.businessType || "-"}</TableCell>
+                      <TableCell>{user.companyName || "-"}</TableCell>
+                      <TableCell>
+                        {user.commercialRegistrationNumber || "-"}
+                      </TableCell>
+                      <TableCell>{user.address || "-"}</TableCell>
                       <TableCell>${user.balance.USD.toFixed(2)}</TableCell>
                       <TableCell>{user.balance.SYP.toLocaleString()}</TableCell>
                       <TableCell>
@@ -331,11 +364,94 @@ export default function UsersManagement() {
 
       {/* Edit User Dialog */}
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-        <DialogContent>
+        <DialogContent className="max-h-[80vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{tr("تعديل المستخدم", "Edit User")}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
+            <div>
+              <Label>{tr("الاسم الكامل", "Full Name")}</Label>
+              <Input
+                value={editFormData.name}
+                onChange={(e) =>
+                  setEditFormData({ ...editFormData, name: e.target.value })
+                }
+              />
+            </div>
+            <div>
+              <Label>{tr("البريد الإلكتروني", "Email")}</Label>
+              <Input
+                value={editFormData.email}
+                onChange={(e) =>
+                  setEditFormData({ ...editFormData, email: e.target.value })
+                }
+              />
+            </div>
+            <div>
+              <Label>{tr("الهاتف", "Phone")}</Label>
+              <Input
+                value={editFormData.phone}
+                onChange={(e) =>
+                  setEditFormData({ ...editFormData, phone: e.target.value })
+                }
+              />
+            </div>
+            <div>
+              <Label>{tr("نوع الحساب", "Account Type")}</Label>
+              <select
+                value={editFormData.businessType}
+                onChange={(e) =>
+                  setEditFormData({
+                    ...editFormData,
+                    businessType: e.target.value,
+                  })
+                }
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+              >
+                <option value="individual">
+                  {tr("فردي", "Individual")}
+                </option>
+                <option value="merchant">
+                  {tr("تجاري", "Merchant")}
+                </option>
+              </select>
+            </div>
+            <div>
+              <Label>{tr("الشركة", "Company")}</Label>
+              <Input
+                value={editFormData.companyName}
+                onChange={(e) =>
+                  setEditFormData({
+                    ...editFormData,
+                    companyName: e.target.value,
+                  })
+                }
+              />
+            </div>
+            <div>
+              <Label>{tr("السجل التجاري", "Commercial Registration")}</Label>
+              <Input
+                value={editFormData.commercialRegistrationNumber}
+                onChange={(e) =>
+                  setEditFormData({
+                    ...editFormData,
+                    commercialRegistrationNumber: e.target.value,
+                  })
+                }
+              />
+            </div>
+            <div>
+              <Label>{tr("العنوان", "Address")}</Label>
+              <Input
+                value={editFormData.address}
+                onChange={(e) =>
+                  setEditFormData({
+                    ...editFormData,
+                    address: e.target.value,
+                  })
+                }
+              />
+            </div>
             <div>
               <Label>{tr("الحالة", "Status")}</Label>
               <select

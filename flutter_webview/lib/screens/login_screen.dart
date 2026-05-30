@@ -34,16 +34,21 @@ class _LoginScreenState extends State<LoginScreen> {
         _emailController.text,
         _passwordController.text,
       );
+      if (!mounted) return;
       widget.onSignedIn();
     } catch (error) {
-      final message = error is ApiException ? error.message : 'Unable to sign in';
+      if (!mounted) return;
+      final message =
+          error is ApiException ? error.message : 'Unable to sign in';
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(message)),
       );
     } finally {
-      setState(() {
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
 

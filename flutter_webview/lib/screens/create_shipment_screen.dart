@@ -454,7 +454,7 @@ class _CreateShipmentScreenState extends State<CreateShipmentScreen> {
         const SizedBox(height: 6),
         DropdownButtonFormField<String>(
           decoration: const InputDecoration(border: OutlineInputBorder()),
-          value: value,
+          initialValue: value,
           items: items,
           onChanged: onChanged,
         ),

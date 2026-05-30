@@ -30,9 +30,13 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     try {
       await ApiService.instance.markAllNotificationsAsRead();
       _refresh();
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('All notifications marked as read')));
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('All notifications marked as read')));
     } catch (error) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error.toString())));
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(error.toString())));
     }
   }
 
@@ -41,7 +45,9 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       await ApiService.instance.markNotificationAsRead(id);
       _refresh();
     } catch (error) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error.toString())));
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(error.toString())));
     }
   }
 
@@ -59,7 +65,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 
             if (snapshot.hasError) {
               return Center(
-                child: Text(snapshot.error.toString(), style: const TextStyle(color: Colors.red)),
+                child: Text(snapshot.error.toString(),
+                    style: const TextStyle(color: Colors.red)),
               );
             }
 
@@ -84,7 +91,9 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                 return ListTile(
                   title: Text(notification.title),
                   subtitle: Text(notification.message),
-                  trailing: notification.isRead ? null : const Icon(Icons.circle, color: Colors.blue, size: 12),
+                  trailing: notification.isRead
+                      ? null
+                      : const Icon(Icons.circle, color: Colors.blue, size: 12),
                   onTap: () => _markRead(notification.id),
                 );
               },

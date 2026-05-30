@@ -29,14 +29,17 @@ class ApiService {
   static const _userKey = 'auth_user';
 
   String? _token;
-  String? _refreshToken;
   User? user;
 
+  static const _apiHost =
+      String.fromEnvironment('API_HOST', defaultValue: '10.0.2.2');
+  static const _apiPort = 5003;
+
   String get baseUrl {
-    if (Platform.isAndroid) {
-      return 'http://10.0.2.2:5001/api';
-    }
-    return 'http://localhost:5001/api';
+    // For Android emulators use 10.0.2.2.
+    // For real devices, build with a reachable server host:
+    // flutter build apk --release --dart-define=API_HOST=192.168.1.100
+    return 'http://$_apiHost:$_apiPort/api';
   }
 
   bool get isAuthenticated => _token != null;
@@ -44,7 +47,6 @@ class ApiService {
   Future<bool> initialize() async {
     final prefs = await SharedPreferences.getInstance();
     _token = prefs.getString(_tokenKey);
-    _refreshToken = prefs.getString(_refreshTokenKey);
 
     if (_token == null) {
       return false;
@@ -72,9 +74,11 @@ class ApiService {
     return headers;
   }
 
-  Future<void> _saveSession({required String token, required String refreshToken, required User authenticatedUser}) async {
+  Future<void> _saveSession(
+      {required String token,
+      required String refreshToken,
+      required User authenticatedUser}) async {
     _token = token;
-    _refreshToken = refreshToken;
     user = authenticatedUser;
 
     final prefs = await SharedPreferences.getInstance();
@@ -85,7 +89,6 @@ class ApiService {
 
   Future<void> _clearSession() async {
     _token = null;
-    _refreshToken = null;
     user = null;
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_tokenKey);
@@ -173,20 +176,25 @@ class ApiService {
     await _clearSession();
   }
 
-  Future<List<ShippingCompany>> getShippingCompanies({required String shippingType}) async {
-    final uri = Uri.parse('$baseUrl/shipping-companies?shippingType=$shippingType');
-    final response = await http.get(uri, headers: {'Content-Type': 'application/json'});
+  Future<List<ShippingCompany>> getShippingCompanies(
+      {required String shippingType}) async {
+    final uri =
+        Uri.parse('$baseUrl/shipping-companies?shippingType=$shippingType');
+    final response =
+        await http.get(uri, headers: {'Content-Type': 'application/json'});
     final body = jsonDecode(response.body);
 
     if (response.statusCode != 200 || body['success'] != true) {
-      throw ApiException(body['message'] ?? 'Unable to fetch shipping companies');
+      throw ApiException(
+          body['message'] ?? 'Unable to fetch shipping companies');
     }
 
     final data = body['data'] as List<dynamic>;
     return data.map((json) => ShippingCompany.fromJson(json)).toList();
   }
 
-  Future<http.Response> _sendMultipartRequest(http.MultipartRequest request) async {
+  Future<http.Response> _sendMultipartRequest(
+      http.MultipartRequest request) async {
     final streamedResponse = await request.send();
     return await http.Response.fromStream(streamedResponse);
   }
@@ -253,7 +261,8 @@ class ApiService {
     return Map<String, dynamic>.from(body['data']['balance'] ?? {});
   }
 
-  Future<List<NotificationItem>> getNotifications({int page = 1, int limit = 20}) async {
+  Future<List<NotificationItem>> getNotifications(
+      {int page = 1, int limit = 20}) async {
     final uri = Uri.parse('$baseUrl/notifications?page=$page&limit=$limit');
     final response = await http.get(uri, headers: _headers);
     final body = jsonDecode(response.body);
@@ -272,7 +281,8 @@ class ApiService {
     final body = jsonDecode(response.body);
 
     if (response.statusCode != 200 || body['success'] != true) {
-      throw ApiException(body['message'] ?? 'Unable to mark notification as read');
+      throw ApiException(
+          body['message'] ?? 'Unable to mark notification as read');
     }
   }
 
@@ -282,7 +292,8 @@ class ApiService {
     final body = jsonDecode(response.body);
 
     if (response.statusCode != 200 || body['success'] != true) {
-      throw ApiException(body['message'] ?? 'Unable to mark notifications as read');
+      throw ApiException(
+          body['message'] ?? 'Unable to mark notifications as read');
     }
   }
 
@@ -311,8 +322,10 @@ class ApiService {
   }
 
   Future<TrackInfo> trackShipment(String code) async {
-    final uri = Uri.parse('$baseUrl/shipments/track/${Uri.encodeComponent(code.trim())}');
-    final response = await http.get(uri, headers: {'Content-Type': 'application/json'});
+    final uri = Uri.parse(
+        '$baseUrl/shipments/track/${Uri.encodeComponent(code.trim())}');
+    final response =
+        await http.get(uri, headers: {'Content-Type': 'application/json'});
     final body = jsonDecode(response.body);
 
     if (response.statusCode != 200 || body['success'] != true) {
