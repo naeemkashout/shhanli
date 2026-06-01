@@ -59,6 +59,8 @@ export default function Profile() {
     commercialRegister: "",
     bio: "",
     address: "",
+    balanceUSD: 0,
+    balanceSYP: 0,
   });
 
   const [isProfileLoading, setIsProfileLoading] = useState(true);
@@ -109,6 +111,8 @@ export default function Profile() {
               profileResponse.commercialRegistrationNumber || "",
             bio: "",
             address: profileResponse.address || "",
+            balanceUSD: Number(profileResponse.balance?.USD || 0),
+            balanceSYP: Number(profileResponse.balance?.SYP || 0),
           });
         } catch (error) {
           console.error("Failed to fetch profile data:", error);
@@ -123,6 +127,8 @@ export default function Profile() {
             commercialRegister: user.commercialRegistrationNumber || "",
             bio: "",
             address: user.address || "",
+            balanceUSD: Number(user.balance?.USD || 0),
+            balanceSYP: Number(user.balance?.SYP || 0),
           });
         } finally {
           setIsProfileLoading(false);
@@ -414,6 +420,25 @@ export default function Profile() {
                           : "Address not specified")}
                     </span>
                   </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4 mt-4">
+                <div className="rounded-lg border border-gray-200 bg-slate-50 p-4">
+                  <p className="text-sm text-gray-500">
+                    {t("balance.usdBalance")}
+                  </p>
+                  <p className="text-xl font-semibold text-gray-900">
+                    ${profileData.balanceUSD.toFixed(2)}
+                  </p>
+                </div>
+                <div className="rounded-lg border border-gray-200 bg-slate-50 p-4">
+                  <p className="text-sm text-gray-500">
+                    {t("balance.sypBalance")}
+                  </p>
+                  <p className="text-xl font-semibold text-gray-900">
+                    {profileData.balanceSYP.toLocaleString()} SYP
+                  </p>
                 </div>
               </div>
             </div>

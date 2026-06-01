@@ -44,8 +44,6 @@ interface Summary {
 }
 
 export default function ComparisonInvoices() {
-  const LAST_IMPORT_RESULT_STORAGE_KEY =
-    "comparison_invoices_last_import_result";
   const { user } = useAuth();
   const { language } = useLanguage();
   const tr = (ar: string, en: string) => (language === "ar" ? ar : en);
@@ -125,6 +123,8 @@ export default function ComparisonInvoices() {
   const [companyId, setCompanyId] = useState("");
   const [companies, setCompanies] = useState<any[]>([]);
 
+  const LAST_IMPORT_RESULT_STORAGE_KEY = `comparison_invoices_last_import_result:${isPlatformAdmin ? (companyId || "all") : (user?.shippingCompanyId || "me")}`;
+
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
 
@@ -140,7 +140,7 @@ export default function ComparisonInvoices() {
     } catch (error) {
       sessionStorage.removeItem(LAST_IMPORT_RESULT_STORAGE_KEY);
     }
-  }, []);
+  }, [LAST_IMPORT_RESULT_STORAGE_KEY]);
 
   useEffect(() => {
     if (isPlatformAdmin) {
@@ -275,7 +275,9 @@ export default function ComparisonInvoices() {
     try {
       setIsExporting(true);
       const blob = await adminService.exportCompanySettlementExcel({
-        companyId: isPlatformAdmin ? companyId || undefined : undefined,
+        companyId: isPlatformAdmin
+          ? companyId || undefined
+          : String(user?.shippingCompanyId || "") || undefined,
         search: search || undefined,
         shipmentStatus: shipmentStatus || undefined,
         paymentMethod: paymentMethod || undefined,
@@ -302,6 +304,19 @@ export default function ComparisonInvoices() {
     }
   };
 
+  const handleResetComparison = async () => {
+    setLastImportResult(null);
+    sessionStorage.removeItem(LAST_IMPORT_RESULT_STORAGE_KEY);
+    setShowAllImportErrors(false);
+    toast.success(
+      tr(
+        "تم تصفير نتائج المقارنة ويمكنك رفع ملف جديد",
+        "Comparison results reset; you can upload a new file",
+      ),
+    );
+    await loadData();
+  };
+
   const handleImportExcel = async (
     event: React.ChangeEvent<HTMLInputElement>,
   ) => {
@@ -309,13 +324,21 @@ export default function ComparisonInvoices() {
     event.target.value = "";
     if (!file) return;
 
+    if (isPlatformAdmin && !companyId) {
+      toast.error(tr("يجب اختيار نطاق الشركة", "Company scope is required"));
+      return;
+    }
+
     try {
       // Clear previous import state so only the latest result is displayed.
       setLastImportResult(null);
       sessionStorage.removeItem(LAST_IMPORT_RESULT_STORAGE_KEY);
       setShowAllImportErrors(false);
       setIsImporting(true);
-      const response = await adminService.importComparisonInvoices(file);
+      const response = await adminService.importComparisonInvoices(
+        file,
+        isPlatformAdmin ? companyId : undefined,
+      );
       const result = response?.data || null;
       setLastImportResult(result);
       if (result) {
@@ -597,6 +620,14 @@ export default function ComparisonInvoices() {
             <Download className="w-4 h-4 mr-2" />
             {tr("تصدير Excel", "Export Excel")}
           </Button>
+          <Button
+            variant="outline"
+            onClick={handleResetComparison}
+            disabled={isImporting || isLoading}
+          >
+            <RefreshCw className="w-4 h-4 mr-2" />
+            {tr("إعادة الضبط", "Reset Comparison")}
+          </Button>
         </div>
       </div>
 
@@ -713,6 +744,48 @@ export default function ComparisonInvoices() {
                         )}
                   </Button>
                 )}
+              </div>
+            )}
+
+            {Array.isArray(lastImportResult?.updates) && lastImportResult.updates.length > 0 && (
+              <div className="rounded-lg border border-slate-200 bg-white p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <p className="font-medium text-gray-800">{tr("تفاصيل الاختلافات", "Differences Details")}</p>
+                  <p className="text-sm text-gray-500">{tr("عرض أول 200 صف", "Showing first 200 rows")}</p>
+                </div>
+
+                <div className="overflow-auto max-h-64">
+                  <table className="min-w-full text-sm text-left">
+                    <thead>
+                      <tr className="text-xs text-gray-500">
+                        <th className="px-2 py-1">{tr("الصف", "Row")}</th>
+                        <th className="px-2 py-1">{tr("تتبع / مرجع", "Tracking / Reference")}</th>
+                        <th className="px-2 py-1">{tr("الحالة (سابق)", "Status (Prev)")}</th>
+                        <th className="px-2 py-1">{tr("الحالة (حالي)", "Status (Now)")}</th>
+                        <th className="px-2 py-1">{tr("الوزن (سابق)", "Weight (Prev)")}</th>
+                        <th className="px-2 py-1">{tr("الوزن (حالي)", "Weight (Now)")}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {lastImportResult.updates.slice(0, 200).map((u: any, idx: number) => (
+                        <tr key={`${u.rowNumber}-${idx}`} className="border-t">
+                          <td className="px-2 py-2 align-top">{u.rowNumber}</td>
+                          <td className="px-2 py-2 align-top">
+                            {u.trackingNumber || u.reference || "-"}
+                          </td>
+                          <td className="px-2 py-2 align-top text-gray-600">{u.previousStatus || "-"}</td>
+                          <td className={`px-2 py-2 align-top font-medium ${u.statusChanged ? 'text-blue-700' : 'text-gray-700'}`}>
+                            {u.currentStatus || u.previousStatus || "-"}
+                          </td>
+                          <td className="px-2 py-2 align-top text-gray-600">{typeof u.previousWeight !== 'undefined' ? (u.previousWeight === null ? '-' : u.previousWeight) : '-'}</td>
+                          <td className={`px-2 py-2 align-top ${u.weightChanged ? 'text-blue-700 font-medium' : 'text-gray-700'}`}>
+                            {typeof u.currentWeight !== 'undefined' ? (u.currentWeight === null ? '-' : u.currentWeight) : '-'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             )}
           </CardContent>

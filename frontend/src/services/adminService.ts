@@ -299,10 +299,16 @@ class AdminService {
     }
   }
 
-  async importComparisonInvoices(file: File): Promise<any> {
+  async importComparisonInvoices(
+    file: File,
+    companyId?: string,
+  ): Promise<any> {
     try {
       const formData = new FormData();
       formData.append("file", file);
+      if (companyId) {
+        formData.append("companyId", companyId);
+      }
 
       const response = await api.post(
         "/admin/comparison-invoices/import",

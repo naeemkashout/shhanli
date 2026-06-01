@@ -158,6 +158,17 @@ exports.updateCompany = async (req, res) => {
       });
     }
 
+    if (
+      req.user?.role === "company-admin" &&
+      req.user.shippingCompanyId &&
+      company._id.toString() !== req.user.shippingCompanyId.toString()
+    ) {
+      return res.status(403).json({
+        success: false,
+        message: "Not authorized to update this company",
+      });
+    }
+
     applyCompanyUpdates(company, updates);
 
     await company.save();
@@ -192,6 +203,17 @@ exports.getCompanyById = async (req, res) => {
       });
     }
 
+    if (
+      req.user?.role === "company-admin" &&
+      req.user.shippingCompanyId &&
+      company._id.toString() !== req.user.shippingCompanyId.toString()
+    ) {
+      return res.status(403).json({
+        success: false,
+        message: "Not authorized to access this company",
+      });
+    }
+
     res.json({
       success: true,
       data: company,
@@ -218,6 +240,17 @@ exports.upsertCompanyAdminAccount = async (req, res) => {
       return res.status(404).json({
         success: false,
         message: "Shipping company not found",
+      });
+    }
+
+    if (
+      req.user?.role === "company-admin" &&
+      req.user.shippingCompanyId &&
+      company._id.toString() !== req.user.shippingCompanyId.toString()
+    ) {
+      return res.status(403).json({
+        success: false,
+        message: "Not authorized to manage admin account for this company",
       });
     }
 
@@ -486,6 +519,16 @@ exports.getDashboardStats = async (req, res) => {
     const daysAgo = new Date();
     daysAgo.setDate(daysAgo.getDate() - parseInt(period));
 
+    const isCompanyAdmin = req.user?.role === "company-admin";
+    const companyId = String(req.user?.shippingCompanyId || "");
+    const companyFilter = isCompanyAdmin
+      ? { "shippingCompany.id": companyId }
+      : {};
+
+    const currentCompany = isCompanyAdmin
+      ? await ShippingCompany.findById(companyId).lean()
+      : null;
+
     // Users stats
     const totalUsers = await User.countDocuments({ role: "user" });
     const newUsers = await User.countDocuments({
@@ -498,28 +541,46 @@ exports.getDashboardStats = async (req, res) => {
     });
 
     // Shipments stats
-    const totalShipments = await Shipment.countDocuments();
+    const totalShipments = await Shipment.countDocuments(companyFilter);
     const pendingShipments = await Shipment.countDocuments({
+      ...companyFilter,
       status: "pending",
     });
     const inTransitShipments = await Shipment.countDocuments({
+      ...companyFilter,
       status: "in-transit",
     });
     const deliveredShipments = await Shipment.countDocuments({
+      ...companyFilter,
       status: "delivered",
     });
     const newShipments = await Shipment.countDocuments({
+      ...companyFilter,
       createdAt: { $gte: daysAgo },
     });
 
     // Revenue stats
+    const revenueMatch = {
+      type: "payment",
+      status: "completed",
+      createdAt: { $gte: daysAgo },
+    };
+
     const revenueData = await Transaction.aggregate([
+      { $match: revenueMatch },
       {
-        $match: {
-          type: "payment",
-          status: "completed",
-          createdAt: { $gte: daysAgo },
+        $lookup: {
+          from: "shipments",
+          localField: "relatedShipment",
+          foreignField: "_id",
+          as: "shipment",
         },
+      },
+      { $unwind: { path: "$shipment", preserveNullAndEmptyArrays: true } },
+      {
+        $match: isCompanyAdmin
+          ? { "shipment.shippingCompany.id": companyId }
+          : {},
       },
       {
         $group: {
@@ -534,6 +595,10 @@ exports.getDashboardStats = async (req, res) => {
       USD: revenueData.find((r) => r._id === "USD")?.total || 0,
       SYP: revenueData.find((r) => r._id === "SYP")?.total || 0,
     };
+
+    const companyMatchWhenAdmin = isCompanyAdmin
+      ? { "shipment.shippingCompany.id": companyId }
+      : {};
 
     const companyRevenueData = await Transaction.aggregate([
       {
@@ -553,6 +618,7 @@ exports.getDashboardStats = async (req, res) => {
         },
       },
       { $unwind: "$shipment" },
+      { $match: companyMatchWhenAdmin },
       {
         $group: {
           _id: "$shipment.shippingCompany.id",
@@ -597,6 +663,16 @@ exports.getDashboardStats = async (req, res) => {
           createdAt: { $gte: daysAgo },
         },
       },
+      {
+        $lookup: {
+          from: "shipments",
+          localField: "relatedShipment",
+          foreignField: "_id",
+          as: "shipment",
+        },
+      },
+      { $unwind: { path: "$shipment", preserveNullAndEmptyArrays: true } },
+      { $match: companyMatchWhenAdmin },
       {
         $project: {
           currency: 1,
@@ -659,6 +735,13 @@ exports.getDashboardStats = async (req, res) => {
     res.json({
       success: true,
       data: {
+        currentCompany: currentCompany
+          ? {
+              id: currentCompany._id,
+              name: currentCompany.name,
+              code: currentCompany.code,
+            }
+          : null,
         users: {
           total: totalUsers,
           new: newUsers,
@@ -702,6 +785,22 @@ exports.getAllCompanies = async (req, res) => {
       ];
     }
     if (isActive !== undefined) query.isActive = isActive === "true";
+
+    if (req.user?.role === "company-admin") {
+      if (!req.user.shippingCompanyId) {
+        return res.json({
+          success: true,
+          data: [],
+          pagination: {
+            page: parseInt(page),
+            limit: parseInt(limit),
+            total: 0,
+            pages: 0,
+          },
+        });
+      }
+      query._id = req.user.shippingCompanyId;
+    }
 
     const companies = await ShippingCompany.find(query)
       .populate("ownerUserId", "name email phone")
@@ -1820,11 +1919,179 @@ exports.updateShipmentStatus = async (req, res) => {
 // @access  Private/Admin
 exports.getAllTransactions = async (req, res) => {
   try {
-    const { type, status, page = 1, limit = 10 } = req.query;
+    const {
+      type,
+      status,
+      page = 1,
+      limit = 10,
+      scope,
+      companyId: queryCompanyId,
+      paymentMethod,
+      currency,
+      dateFrom,
+      dateTo,
+      shipmentStatus,
+      search,
+    } = req.query;
 
+    // If requesting company-settlement scope, use aggregation to join shipments
+    if (scope === "company-settlement") {
+      // Determine allowed company scope: platform admins can pass companyId, others are restricted to their company
+      const isPlatformOwner = req.user?.role === "admin" || req.user?.role === "super-admin";
+      const allowedCompanyId = isPlatformOwner
+        ? queryCompanyId || null
+        : req.user?.shippingCompanyId || null;
+
+      const match = {
+        type: "payment",
+        status: "completed",
+      };
+      if (paymentMethod) match.method = paymentMethod;
+      if (currency && currency !== "all") match.currency = currency;
+      if (dateFrom || dateTo) match.createdAt = {};
+      if (dateFrom) match.createdAt.$gte = new Date(dateFrom);
+      if (dateTo) match.createdAt.$lte = new Date(dateTo);
+      if (search) {
+        match.$or = [{ reference: { $regex: search, $options: "i" } }];
+      }
+
+      const aggregatePipeline = [
+        { $match: match },
+        {
+          $lookup: {
+            from: "shipments",
+            localField: "relatedShipment",
+            foreignField: "_id",
+            as: "shipment",
+          },
+        },
+        { $unwind: { path: "$shipment", preserveNullAndEmptyArrays: true } },
+      ];
+
+      if (allowedCompanyId) {
+        aggregatePipeline.push({
+          $match: { "shipment.shippingCompany.id": String(allowedCompanyId) },
+        });
+      }
+
+      if (shipmentStatus) {
+        aggregatePipeline.push({ $match: { "shipment.status": shipmentStatus } });
+      }
+
+      aggregatePipeline.push({ $sort: { createdAt: -1 } });
+      aggregatePipeline.push({
+        $group: {
+          _id: "$shipment._id",
+          doc: { $first: "$$ROOT" },
+        },
+      });
+      aggregatePipeline.push({ $replaceRoot: { newRoot: "$doc" } });
+
+      const facet = {
+        $facet: {
+          data: [{ $skip: (Number(page) - 1) * Number(limit) }, { $limit: Number(limit) }],
+          totalCount: [{ $count: "count" }],
+        },
+      };
+
+      aggregatePipeline.push(facet);
+
+      const result = await Transaction.aggregate(aggregatePipeline).allowDiskUse(true);
+      const data = (result[0]?.data || []).map((r) => ({
+        _id: r._id,
+        reference: r.reference,
+        amount: r.amount,
+        baseAmount: r.baseAmount,
+        codFee: r.codFee,
+        currency: r.currency,
+        paymentMethod: r.method,
+        shipmentStatus: r.shipment?.status,
+        trackingNumber: r.shipment?.trackingNumber,
+        createdAt: r.createdAt,
+        userId: r.userId,
+      }));
+
+      const total = (result[0]?.totalCount[0]?.count) || 0;
+
+      return res.json({
+        success: true,
+        data,
+        pagination: {
+          page: Number(page),
+          limit: Number(limit),
+          total,
+          pages: Math.max(1, Math.ceil(total / Number(limit))),
+        },
+      });
+    }
+
+    // Fallback: regular transactions listing
     const query = {};
     if (type) query.type = type;
     if (status) query.status = status;
+
+    if (req.user?.role === "company-admin") {
+      const companyId = req.user.shippingCompanyId?.toString();
+      if (!companyId) {
+        return res.json({
+          success: true,
+          data: [],
+          pagination: {
+            page: parseInt(page),
+            limit: parseInt(limit),
+            total: 0,
+            pages: 0,
+          },
+        });
+      }
+
+      const result = await Transaction.aggregate([
+        { $match: query },
+        {
+          $lookup: {
+            from: "shipments",
+            localField: "relatedShipment",
+            foreignField: "_id",
+            as: "shipment",
+          },
+        },
+        { $unwind: { path: "$shipment", preserveNullAndEmptyArrays: true } },
+        { $match: { "shipment.shippingCompany.id": companyId } },
+        {
+          $lookup: {
+            from: "users",
+            localField: "userId",
+            foreignField: "_id",
+            as: "user",
+          },
+        },
+        { $unwind: { path: "$user", preserveNullAndEmptyArrays: true } },
+        { $sort: { createdAt: -1 } },
+        {
+          $facet: {
+            data: [{ $skip: (Number(page) - 1) * Number(limit) }, { $limit: Number(limit) }],
+            totalCount: [{ $count: "count" }],
+          },
+        },
+      ]).allowDiskUse(true);
+
+      const data = (result[0]?.data || []).map((item) => ({
+        ...item,
+        userId: item.user || item.userId,
+      }));
+      const total = (result[0]?.totalCount[0]?.count) || 0;
+
+      return res.json({
+        success: true,
+        data,
+        pagination: {
+          page: Number(page),
+          limit: Number(limit),
+          total,
+          pages: Math.max(1, Math.ceil(total / Number(limit))),
+        },
+      });
+    }
 
     const transactions = await Transaction.find(query)
       .populate("userId", "name email phone")
@@ -1849,6 +2116,219 @@ exports.getAllTransactions = async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Error fetching transactions",
+      error: error.message,
+    });
+  }
+};
+
+const normalizeHeaderValue = (value) =>
+  String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, "");
+
+const parseExcelNumber = (value) => {
+  if (value === null || value === undefined) return null;
+  const str = String(value).trim().replace(/,/g, ".");
+  const number = Number(str);
+  return Number.isFinite(number) ? number : null;
+};
+
+const findShipmentForImport = async ({ trackingNumber, reference, companyId }) => {
+  if (trackingNumber) {
+    const query = {
+      trackingNumber: String(trackingNumber || "").trim().toUpperCase(),
+    };
+    if (companyId) query["shippingCompany.id"] = String(companyId);
+
+    const shipment = await Shipment.findOne(query);
+    if (shipment) return shipment;
+  }
+
+  if (reference) {
+    const transaction = await Transaction.findOne({
+      reference: String(reference || "").trim(),
+    }).populate("relatedShipment");
+
+    if (transaction?.relatedShipment) {
+      const shipment = transaction.relatedShipment;
+      if (!companyId || String(shipment.shippingCompany?.id) === String(companyId)) {
+        return shipment;
+      }
+    }
+  }
+
+  return null;
+};
+
+// @desc    Import comparison invoices from Excel
+// @route   POST /api/admin/comparison-invoices/import
+// @access  Private/Admin
+exports.importComparisonInvoices = async (req, res) => {
+  try {
+    if (!req.file || !req.file.buffer) {
+      return res.status(400).json({
+        success: false,
+        message: "Excel file is required",
+      });
+    }
+
+    const companyId = req.body.companyId || req.user?.shippingCompanyId;
+    if (!companyId) {
+      return res.status(400).json({
+        success: false,
+        message: "Company scope is required",
+      });
+    }
+
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(req.file.buffer);
+
+    const worksheet = workbook.worksheets[0];
+    if (!worksheet) {
+      return res.status(400).json({
+        success: false,
+        message: "Excel file does not contain any worksheet",
+      });
+    }
+
+    const headerRow = worksheet.getRow(1);
+    const columnMap = {};
+    headerRow.eachCell((cell, colNumber) => {
+      const key = normalizeHeaderValue(cell.value);
+      if (!key) return;
+
+      if (
+        ["trackingnumber", "trackingnumber", "tracking", "shipmenttrackingnumber", "shipmenttracking", "trackingno", "trackingno"].includes(key)
+      ) {
+        columnMap.trackingNumber = colNumber;
+      } else if (
+        ["reference", "ref", "transactionreference", "transactionref", "invoice", "invoiceid"].includes(key)
+      ) {
+        columnMap.reference = colNumber;
+      } else if (
+        ["status", "shipmentstatus", "state", "currentstatus"].includes(key)
+      ) {
+        columnMap.status = colNumber;
+      } else if (
+        ["weight", "actualweight", "billingweight", "packageweight", "weightkg"].includes(key)
+      ) {
+        columnMap.weight = colNumber;
+      }
+    });
+
+    const rows = [];
+    worksheet.eachRow({ includeEmpty: false }, (row, rowNumber) => {
+      if (rowNumber === 1) return;
+      rows.push(row);
+    });
+
+    const errors = [];
+    const updates = [];
+    let matched = 0;
+    let updated = 0;
+    let skipped = 0;
+
+    for (const row of rows) {
+      const rowNumber = row.number;
+      const trackingValue = columnMap.trackingNumber
+        ? row.getCell(columnMap.trackingNumber).value
+        : null;
+      const referenceValue = columnMap.reference
+        ? row.getCell(columnMap.reference).value
+        : null;
+      const statusValue = columnMap.status
+        ? row.getCell(columnMap.status).value
+        : null;
+      const weightValue = columnMap.weight
+        ? row.getCell(columnMap.weight).value
+        : null;
+
+      const trackingNumber = String(trackingValue || "").trim();
+      const reference = String(referenceValue || "").trim();
+      const status = String(statusValue || "").trim();
+      const weight = parseExcelNumber(weightValue);
+
+      if (!trackingNumber && !reference) {
+        errors.push({
+          rowNumber,
+          message: "Missing tracking number or reference",
+        });
+        skipped += 1;
+        continue;
+      }
+
+      if (!status && weight === null) {
+        errors.push({
+          rowNumber,
+          message: "Row does not contain a valid status or weight",
+        });
+        skipped += 1;
+        continue;
+      }
+
+      const shipment = await findShipmentForImport({
+        trackingNumber,
+        reference,
+        companyId,
+      });
+
+      if (!shipment) {
+        errors.push({
+          rowNumber,
+          message: "Shipment not found in current scope",
+        });
+        skipped += 1;
+        continue;
+      }
+
+      matched += 1;
+
+      const currentStatus = String(shipment.status || "").trim();
+      const previousWeight = Number(shipment.package?.weight || 0);
+      const normalizedStatus = status ? String(status).trim() : "";
+      const statusChanged = normalizedStatus
+        ? normalizedStatus !== currentStatus
+        : false;
+      const weightChanged =
+        weight !== null && Math.abs(weight - previousWeight) > 0.0001;
+
+      if (statusChanged || weightChanged) {
+        updated += 1;
+      }
+
+      updates.push({
+        rowNumber,
+        trackingNumber: trackingNumber || undefined,
+        reference: reference || undefined,
+        previousStatus: currentStatus,
+        currentStatus: normalizedStatus || currentStatus,
+        previousWeight,
+        currentWeight: weight !== null ? weight : previousWeight,
+        statusChanged,
+        weightChanged,
+      });
+    }
+
+    const result = {
+      totalRows: rows.length,
+      matched,
+      updated,
+      skipped,
+      unchanged: Math.max(0, matched - updated),
+      errors,
+      updates,
+    };
+
+    return res.json({
+      success: true,
+      data: result,
+      message: "Comparison invoice imported successfully",
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Error importing comparison invoice",
       error: error.message,
     });
   }
@@ -1932,7 +2412,12 @@ exports.exportToExcel = async (req, res) => {
         });
       });
     } else if (type === "shipments") {
-      const shipments = await Shipment.find().populate("userId", "name email");
+      const query = {};
+      if (req.user?.role === "company-admin" && req.user?.shippingCompanyId) {
+        query["shippingCompany.id"] = req.user.shippingCompanyId.toString();
+      }
+
+      const shipments = await Shipment.find(query).populate("userId", "name email");
 
       worksheet.columns = [
         { header: "Tracking Number", key: "trackingNumber", width: 20 },
@@ -1993,10 +2478,60 @@ exports.exportToExcel = async (req, res) => {
         ];
       }
 
-      const transactions = await Transaction.find(query)
-        .populate("userId", "name email phone")
-        .populate("relatedShipment", "trackingNumber shippingCompany")
-        .sort({ createdAt: -1 });
+      const companyAdminCompanyId =
+        req.user?.role === "company-admin" && req.user?.shippingCompanyId
+          ? req.user.shippingCompanyId.toString()
+          : null;
+
+      let transactions;
+      if (companyAdminCompanyId) {
+        transactions = await Transaction.aggregate([
+          { $match: query },
+          {
+            $lookup: {
+              from: "shipments",
+              localField: "relatedShipment",
+              foreignField: "_id",
+              as: "shipment",
+            },
+          },
+          { $unwind: { path: "$shipment", preserveNullAndEmptyArrays: true } },
+          { $match: { "shipment.shippingCompany.id": companyAdminCompanyId } },
+          {
+            $lookup: {
+              from: "users",
+              localField: "userId",
+              foreignField: "_id",
+              as: "user",
+            },
+          },
+          { $unwind: { path: "$user", preserveNullAndEmptyArrays: true } },
+          {
+            $project: {
+              _id: 1,
+              type: 1,
+              status: 1,
+              amount: 1,
+              currency: 1,
+              method: 1,
+              reference: 1,
+              createdAt: 1,
+              userId: { _id: "$user._id", name: "$user.name", email: "$user.email", phone: "$user.phone" },
+              relatedShipment: {
+                _id: "$shipment._id",
+                trackingNumber: "$shipment.trackingNumber",
+                shippingCompany: "$shipment.shippingCompany",
+              },
+            },
+          },
+          { $sort: { createdAt: -1 } },
+        ]).allowDiskUse(true);
+      } else {
+        transactions = await Transaction.find(query)
+          .populate("userId", "name email phone")
+          .populate("relatedShipment", "trackingNumber shippingCompany")
+          .sort({ createdAt: -1 });
+      }
 
       worksheet.columns = [
         { header: "ID", key: "id", width: 25 },
@@ -2040,6 +2575,11 @@ exports.exportToExcel = async (req, res) => {
         shipmentStatus,
       } = req.query;
 
+      const allowedCompanyId = companyId ||
+        (req.user?.role !== "admin" && req.user?.role !== "super-admin"
+          ? req.user?.shippingCompanyId
+          : undefined);
+
       const match = {
         type: "payment",
         status: "completed",
@@ -2062,23 +2602,25 @@ exports.exportToExcel = async (req, res) => {
           },
         },
         { $unwind: { path: "$shipment", preserveNullAndEmptyArrays: true } },
+        allowedCompanyId
+          ? { $match: { "shipment.shippingCompany.id": String(allowedCompanyId) } }
+          : { $match: {} },
+        shipmentStatus
+          ? { $match: { "shipment.status": shipmentStatus } }
+          : { $match: {} },
+        { $sort: { createdAt: -1 } },
         {
-          $match: companyId
-            ? { "shipment.shippingCompany.id": companyId }
-            : {},
-        },
-        {
-          $project: {
-            reference: 1,
-            amount: 1,
-            currency: 1,
-            method: 1,
-            createdAt: 1,
-            userId: 1,
-            trackingNumber: "$shipment.trackingNumber",
-            companyId: "$shipment.shippingCompany.id",
-            companyName: "$shipment.shippingCompany.name",
-            shipmentStatus: "$shipment.status",
+          $group: {
+            _id: "$shipment._id",
+            reference: { $first: "$reference" },
+            amount: { $first: "$amount" },
+            currency: { $first: "$currency" },
+            method: { $first: "$method" },
+            createdAt: { $first: "$createdAt" },
+            trackingNumber: { $first: "$shipment.trackingNumber" },
+            companyId: { $first: "$shipment.shippingCompany.id" },
+            companyName: { $first: "$shipment.shippingCompany.name" },
+            shipmentStatus: { $first: "$shipment.status" },
           },
         },
         { $sort: { createdAt: -1 } },

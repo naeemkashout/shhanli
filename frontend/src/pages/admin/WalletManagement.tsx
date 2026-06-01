@@ -162,6 +162,7 @@ export default function WalletManagement() {
     try {
       const blob = isSettlementView
         ? await adminService.exportCompanySettlementExcel({
+            companyId: String(user?.shippingCompanyId || "") || undefined,
             search,
             shipmentStatus: statusFilter,
             paymentMethod: paymentMethodFilter,
