@@ -166,7 +166,7 @@ const advancedSearch = (text: string, query: string): boolean => {
  */
 export const searchCountries = (
   query: string,
-  language: "ar" | "en" = "en"
+  _language: "ar" | "en" = "en"
 ): GlobalCountry[] => {
   if (!query.trim()) {
     return getAllCountries();
@@ -202,7 +202,7 @@ export const searchCountries = (
 export const searchStates = (
   countryCode: string,
   query: string,
-  language: "ar" | "en" = "en"
+  _language: "ar" | "en" = "en"
 ): GlobalState[] => {
   if (!query.trim()) {
     return getStatesByCountry(countryCode);
@@ -233,7 +233,7 @@ export const searchCities = (
   countryCode: string,
   stateCode: string,
   query: string,
-  language: "ar" | "en" = "en"
+  _language: "ar" | "en" = "en"
 ): GlobalCity[] => {
   if (!query.trim()) {
     return getCitiesByState(countryCode, stateCode);

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -30,13 +30,11 @@ import {
   MapPin,
   Mail,
   Building,
-  UserCheck,
 } from "lucide-react";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { toast } from "sonner";
 import { GlobalCountrySelector } from "@/components/GlobalCountrySelector";
 import { SearchableStateSelector } from "@/components/SearchableStateSelector";
-import { GlobalCountry, GlobalState } from "@/data/globalLocations";
 import contactService, { CreateContactData } from "@/services/contactService";
 
 interface Contact {
@@ -56,82 +54,6 @@ interface Contact {
   commercialRegister?: string;
 }
 
-interface Country {
-  code: string;
-  name: string;
-  states: { [key: string]: string[] };
-}
-
-const countries: Country[] = [
-  {
-    code: "SY",
-    name: "سوريا",
-    states: {
-      دمشق: ["دمشق", "جرمانا", "دوما", "قطنا"],
-      حلب: ["حلب", "عفرين", "اعزاز", "الباب"],
-      حمص: ["حمص", "تدمر", "القريتين", "الرستن"],
-      حماة: ["حماة", "سلمية", "مصياف", "السقيلبية"],
-      اللاذقية: ["اللاذقية", "جبلة", "القرداحة", "الحفة"],
-      طرطوس: ["طرطوس", "بانياس", "صافيتا", "الدريكيش"],
-    },
-  },
-  {
-    code: "LB",
-    name: "لبنان",
-    states: {
-      بيروت: ["بيروت"],
-      "جبل لبنان": ["جونية", "بعبدا", "عاليه", "المتن"],
-      الشمال: ["طرابلس", "زغرتا", "الكورة", "المنية الضنية"],
-    },
-  },
-];
-
-const mockContacts: Contact[] = [
-  {
-    id: "1",
-    name: "أحمد محمد",
-    phone: "+963991234567",
-    email: "ahmed@example.com",
-    address: "شارع الملك فيصل، حي السلامانية",
-    street: "شارع الملك فيصل",
-    city: "حلب",
-    state: "حلب",
-    country: "سوريا",
-    type: "both",
-    clientType: "merchant",
-    companyName: "شركة أحمد التجارية",
-    commercialRegister: "12345678",
-  },
-  {
-    id: "2",
-    name: "فاطمة علي",
-    phone: "+963987654321",
-    email: "fatima@example.com",
-    address: "شارع النور، حي الحرة",
-    street: "شارع النور",
-    city: "دمشق",
-    state: "دمشق",
-    country: "سوريا",
-    type: "receiver",
-    clientType: "individual",
-  },
-  {
-    id: "3",
-    name: "محمد سالم",
-    phone: "+963982222222",
-    email: "mohamed@example.com",
-    address: "شارع الثورة، حي الوعر",
-    street: "شارع الثورة",
-    city: "حمص",
-    state: "حمص",
-    country: "سوريا",
-    type: "sender",
-    clientType: "merchant",
-    companyName: "مؤسسة سالم للتجارة",
-    commercialRegister: "87654321",
-  },
-];
-
 const PHONE_REGEX = /^\+?\d{7,15}$/;
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -145,7 +67,7 @@ const normalizePhoneInput = (value: string) => {
 export default function Contacts() {
   const { t, isRTL } = useLanguage();
   const [contacts, setContacts] = useState<Contact[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [clientTypeFilter, setClientTypeFilter] = useState<string>("all");
@@ -154,7 +76,7 @@ export default function Contacts() {
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
   const [contactToDelete, setContactToDelete] = useState<Contact | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [, setIsSubmitting] = useState(false);
   const [formData, setFormData] = useState<CreateContactData>({
     name: "",
     phone: "",

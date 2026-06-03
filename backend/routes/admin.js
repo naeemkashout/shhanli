@@ -100,7 +100,7 @@ router.get("/users", managementAuth, safeHandler(getAllUsers, "getAllUsers"));
 router.put("/users/:id", managementAuth, safeHandler(updateUser, "updateUser"));
 router.delete(
   "/users/:id",
-  superAdminAuth,
+  adminAuth,
   safeHandler(deleteUser, "deleteUser"),
 );
 

@@ -11,11 +11,9 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import {
-  Package,
   ArrowLeft,
   Globe,
   CheckCircle,
-  AlertCircle,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useLanguage } from "@/contexts/LanguageContext";

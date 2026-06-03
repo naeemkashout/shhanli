@@ -110,9 +110,11 @@ function App() {
               <Route
                 path="/create-shipment"
                 element={
-                  <Layout>
-                    <CreateShipment />
-                  </Layout>
+                  <UserSiteRoute>
+                    <Layout>
+                      <CreateShipment />
+                    </Layout>
+                  </UserSiteRoute>
                 }
               />
               <Route

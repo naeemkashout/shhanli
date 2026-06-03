@@ -108,12 +108,14 @@ export default function WelcomePage({
   }, []);
 
   useEffect(() => {
+    if (!autoPlay) return undefined;
+
     const timer = window.setInterval(() => {
       setNow(Date.now());
-    }, 1000);
+    }, autoPlayIntervalMs);
 
     return () => window.clearInterval(timer);
-  }, []);
+  }, [autoPlay, autoPlayIntervalMs]);
 
   const getOfferText = (
     slide: Slide,

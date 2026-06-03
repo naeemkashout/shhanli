@@ -14,26 +14,19 @@ import { Textarea } from "@/components/ui/textarea";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { GlobalCountrySelector } from "@/components/GlobalCountrySelector";
 import { SearchableStateSelector } from "@/components/SearchableStateSelector";
-import {
-  GlobalCountry,
-  GlobalState,
-  getCountryByCode,
-  getStateByCode,
-} from "@/data/globalLocations";
+import { getCountryByCode, getStateByCode } from "@/data/globalLocations";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
-  Package,
   User,
   MapPin,
   Globe,
-  Map,
+  Map as MapIcon,
   Wallet,
   Calculator,
   CheckCircle,
@@ -45,11 +38,15 @@ import {
   Eye,
   Edit,
   Building,
-  UserCheck,
-  Upload,
-  FileText,
   DollarSign,
+  Package,
 } from "lucide-react";
+import Step1_SelectType from "./create-shipment/Step1_SelectType";
+import Step2_Sender from "./create-shipment/Step2_Sender";
+import Step3_Receivers from "./create-shipment/Step3_Receivers";
+import Step4_Package from "./create-shipment/Step4_Package";
+import Step5_ShippingPayment from "./create-shipment/Step5_ShippingPayment";
+import Step6_Review from "./create-shipment/Step6_Review";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { toast } from "sonner";
 import { useNavigate, useSearchParams } from "react-router-dom";
@@ -135,12 +132,6 @@ interface ShippingCompany {
   }>;
 }
 
-interface Country {
-  code: string;
-  name: string;
-  states: { [key: string]: string[] };
-}
-
 const NEW_CONTACT_OPTION = "__new_contact__";
 
 const isOfferActive = (offer?: ShippingCompany["offers"][number]) => {
@@ -155,38 +146,6 @@ const isOfferActive = (offer?: ShippingCompany["offers"][number]) => {
 
   return true;
 };
-
-const countries: Country[] = [
-  {
-    code: "SY",
-    name: "سوريا",
-    states: {
-      دمشق: ["دمشق", "جرمانا", "دوما", "قطنا"],
-      حلب: ["حلب", "اعزاز", "الباب", "منبج"],
-      حمص: ["حمص", "تدمر", "الرستن", "تلبيسة"],
-      اللاذقية: ["اللاذقية", "جبلة", "القرداحة", "الحفة"],
-    },
-  },
-  {
-    code: "LB",
-    name: "لبنان",
-    states: {
-      بيروت: ["بيروت"],
-      جبل_لبنان: ["جونية", "بعبدا", "عاليه", "المتن"],
-      الشمال: ["طرابلس", "زغرتا", "الكورة", "البترون"],
-      الجنوب: ["صيدا", "صور", "النبطية", "مرجعيون"],
-    },
-  },
-  {
-    code: "JO",
-    name: "الأردن",
-    states: {
-      عمان: ["عمان", "الزرقاء", "السلط", "مادبا"],
-      إربد: ["إربد", "الرمثا", "عجلون", "جرش"],
-      الكرك: ["الكرك", "الطفيلة", "معان", "العقبة"],
-    },
-  },
-];
 
 export default function CreateShipment() {
   const { t, isRTL, language } = useLanguage();
@@ -693,18 +652,6 @@ export default function CreateShipment() {
     );
   };
 
-  const getStatesForCountry = (countryName: string) => {
-    const country = countries.find((c) => c.name === countryName);
-    return country ? Object.keys(country.states) : [];
-  };
-
-  const getCitiesForState = (countryName: string, stateName: string) => {
-    const country = countries.find((c) => c.name === countryName);
-    return country && country.states[stateName]
-      ? country.states[stateName]
-      : [];
-  };
-
   const getAvailableContacts = (
     forReceiver: boolean = false,
     currentSelectedId?: string,
@@ -924,78 +871,6 @@ export default function CreateShipment() {
     }
   };
 
-  const normalizeContactValue = (value?: string) =>
-    String(value || "")
-      .trim()
-      .toLowerCase();
-
-  const saveContactIfNew = async (
-    payload: {
-      name: string;
-      phone: string;
-      email?: string;
-      address?: string;
-      street?: string;
-      country: string;
-      state: string;
-      city: string;
-      clientType: "individual" | "merchant";
-      companyName?: string;
-      commercialRegister?: string;
-      coordinates?: { lat: number; lng: number } | null;
-    },
-    contactType: "sender" | "receiver",
-  ) => {
-    const existingContact = contacts.find((contact) => {
-      const sameIdentity =
-        normalizeContactValue(contact.name) ===
-          normalizeContactValue(payload.name) &&
-        normalizeContactValue(contact.phone) ===
-          normalizeContactValue(payload.phone);
-
-      if (!sameIdentity) return false;
-
-      return contact.type === "both" || contact.type === contactType;
-    });
-
-    if (existingContact) {
-      return;
-    }
-
-    const withSameIdentity = contacts.find(
-      (contact) =>
-        normalizeContactValue(contact.name) ===
-          normalizeContactValue(payload.name) &&
-        normalizeContactValue(contact.phone) ===
-          normalizeContactValue(payload.phone),
-    );
-
-    if (withSameIdentity) {
-      if (withSameIdentity.type !== "both") {
-        await contactService.updateContact(withSameIdentity.id, {
-          type: "both",
-        });
-      }
-      return;
-    }
-
-    await contactService.createContact({
-      name: payload.name,
-      phone: payload.phone,
-      email: payload.email || "",
-      address: (payload.address || payload.street || "").trim(),
-      street: (payload.street || payload.address || "").trim(),
-      country: payload.country,
-      state: payload.state,
-      city: payload.city,
-      clientType: payload.clientType,
-      companyName: payload.companyName || "",
-      commercialRegister: payload.commercialRegister || "",
-      type: contactType,
-      coordinates: payload.coordinates || undefined,
-    });
-  };
-
   const updateReceiver = (
     index: number,
     field: string,
@@ -1036,27 +911,6 @@ export default function CreateShipment() {
     }
     setIsMapOpen(false);
     toast.success(t("msg.locationSelected"));
-  };
-
-  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const files = event.target.files;
-    if (files) {
-      const fileArray = Array.from(files);
-      setFormData((prev) => ({
-        ...prev,
-        senderCompanyDocuments: [...prev.senderCompanyDocuments, ...fileArray],
-      }));
-      toast.success(t("msg.filesUploaded", { count: fileArray.length }));
-    }
-  };
-
-  const removeFile = (index: number) => {
-    setFormData((prev) => ({
-      ...prev,
-      senderCompanyDocuments: prev.senderCompanyDocuments.filter(
-        (_, i) => i !== index,
-      ),
-    }));
   };
 
   const toLatinDigits = (value: string) => {
@@ -2080,7 +1934,7 @@ export default function CreateShipment() {
                       variant="outline"
                       onClick={() => openMapForLocation("sender")}
                     >
-                      <Map className="w-4 h-4" />
+                      <MapIcon className="w-4 h-4" />
                     </Button>
                   </div>
                 </div> */}
@@ -2330,7 +2184,7 @@ export default function CreateShipment() {
                               openMapForLocation("receiver", index)
                             }
                           >
-                            <Map className="w-4 h-4" />
+                            <MapIcon className="w-4 h-4" />
                           </Button>
                         </div>
                       </div> */}
