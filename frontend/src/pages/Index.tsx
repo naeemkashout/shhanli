@@ -272,15 +272,15 @@ export default function WelcomePage({
             {tr("لا توجد عروض حالياً", "No offers available currently")}
           </div>
         ) : (
-          <div className="space-y-3 md:space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-4">
             {slides.map((slide, index) => {
               const ctaText = getOfferText(slide, "ctaText");
               const description = getOfferDescription(slide);
               const priceItems = offerPriceItems(slide);
               const remainingTime = getRemainingTime(slide.endAt);
               const offerCard = (
-                <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm transition-shadow hover:shadow-md">
-                  <div className="flex flex-col gap-2.5 p-3 sm:p-4">
+                <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm transition-shadow hover:shadow-md h-full">
+                  <div className="flex flex-col gap-2.5 p-3 sm:p-4 h-full">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
                         {tr("عرض", "Offer")} {index + 1}

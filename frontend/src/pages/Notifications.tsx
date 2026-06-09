@@ -11,6 +11,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Bell, Circle } from "lucide-react";
+import { normalizeLocalApiUrl } from "@/services/api";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { io, Socket } from "socket.io-client";
@@ -99,8 +100,9 @@ export default function Notifications() {
     const userId = String(user?.id || "").trim();
     if (!userId) return;
 
-    const apiBaseUrl =
-      import.meta.env.VITE_API_URL || "http://localhost:5001/api";
+    const apiBaseUrl = normalizeLocalApiUrl(
+      import.meta.env.VITE_API_URL || "http://localhost:5001/api",
+    );
     const socketUrl = apiBaseUrl.replace(/\/api\/?$/, "");
 
     const socket: Socket = io(socketUrl, {

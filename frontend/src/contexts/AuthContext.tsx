@@ -6,6 +6,7 @@ import React, {
   useState,
 } from "react";
 import { io, Socket } from "socket.io-client";
+import { normalizeLocalApiUrl } from "@/services/api";
 import authService from "@/services/authService";
 import { toast } from "sonner";
 
@@ -107,8 +108,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const userId = String(user?.id || "").trim();
-    const apiBaseUrl =
-      import.meta.env.VITE_API_URL || "http://localhost:5001/api";
+    const apiBaseUrl = normalizeLocalApiUrl(
+      import.meta.env.VITE_API_URL || "http://localhost:5001/api",
+    );
     const socketUrl = apiBaseUrl.replace(/\/api\/?$/, "");
 
     if (!userId) {

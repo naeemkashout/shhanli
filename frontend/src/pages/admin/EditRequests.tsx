@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { normalizeLocalApiUrl } from "@/services/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -74,8 +75,9 @@ export default function EditRequests() {
     if (!isPlatformAdmin && role !== "company-admin") return;
     if (role === "company-admin" && !companyId) return;
 
-    const apiBaseUrl =
-      import.meta.env.VITE_API_URL || "http://localhost:5001/api";
+    const apiBaseUrl = normalizeLocalApiUrl(
+      import.meta.env.VITE_API_URL || "http://localhost:5001/api",
+    );
     const socketUrl = apiBaseUrl.replace(/\/api\/?$/, "");
 
     const socket: Socket = io(socketUrl, {

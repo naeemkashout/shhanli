@@ -7,6 +7,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { normalizeLocalApiUrl } from "@/services/api";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
@@ -79,8 +80,9 @@ export default function Balance() {
     const userId = String(user?.id || "").trim();
     if (!userId) return;
 
-    const apiBaseUrl =
-      import.meta.env.VITE_API_URL || "http://localhost:5001/api";
+    const apiBaseUrl = normalizeLocalApiUrl(
+      import.meta.env.VITE_API_URL || "http://localhost:5001/api",
+    );
     const socketUrl = apiBaseUrl.replace(/\/api\/?$/, "");
 
     const socket: Socket = io(socketUrl, {
@@ -179,7 +181,7 @@ export default function Balance() {
   };
 
   const getMinDepositAmount = (currency: Currency) => {
-    return currency === "SYP" ? 50000 : 10;
+    return currency === "SYP" ? 250 : 10;
   };
 
   const getMaxDepositAmount = (currency: Currency) => {

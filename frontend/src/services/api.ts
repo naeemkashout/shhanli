@@ -15,19 +15,76 @@ const LOCAL_API_BASE_URLS = [
   "http://localhost:5008/api",
   "http://localhost:5009/api",
   "http://localhost:5010/api",
+  "http://127.0.0.1:5001/api",
+  "http://127.0.0.1:5002/api",
+  "http://127.0.0.1:5003/api",
+  "http://127.0.0.1:5004/api",
+  "http://127.0.0.1:5005/api",
+  "http://127.0.0.1:5006/api",
+  "http://127.0.0.1:5007/api",
+  "http://127.0.0.1:5008/api",
+  "http://127.0.0.1:5009/api",
+  "http://127.0.0.1:5010/api",
+  "http://10.0.2.2:5001/api",
+  "http://10.0.2.2:5002/api",
+  "http://10.0.2.2:5003/api",
+  "http://10.0.2.2:5004/api",
+  "http://10.0.2.2:5005/api",
+  "http://10.0.2.2:5006/api",
+  "http://10.0.2.2:5007/api",
+  "http://10.0.2.2:5008/api",
+  "http://10.0.2.2:5009/api",
+  "http://10.0.2.2:5010/api",
+  "http://10.0.3.2:5001/api",
+  "http://10.0.3.2:5002/api",
+  "http://10.0.3.2:5003/api",
+  "http://10.0.3.2:5004/api",
+  "http://10.0.3.2:5005/api",
+  "http://10.0.3.2:5006/api",
+  "http://10.0.3.2:5007/api",
+  "http://10.0.3.2:5008/api",
+  "http://10.0.3.2:5009/api",
+  "http://10.0.3.2:5010/api",
 ];
 const PRIMARY_LOCAL_API_URL = LOCAL_API_BASE_URLS[0];
 const ACTIVE_API_BASE_URL_KEY = "kashout_active_api_base_url";
 
+const getEmulatorHost = () => {
+  if (typeof window === "undefined") return null;
+  if (window.location.hostname === "10.0.2.2") return "10.0.2.2";
+  if (window.location.hostname === "10.0.3.2") return "10.0.3.2";
+  return null;
+};
+
+const normalizeLocalApiUrl = (url: string) => {
+  const emulatorHost = getEmulatorHost();
+  if (!emulatorHost) return url;
+
+  try {
+    const parsed = new URL(url);
+    if (parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1") {
+      parsed.hostname = emulatorHost;
+      return parsed.toString();
+    }
+  } catch {
+    // Keep original URL if parsing fails.
+  }
+
+  return url;
+};
+
+export { normalizeLocalApiUrl };
+
 const getInitialApiBaseUrl = () => {
-  if (import.meta.env.VITE_API_URL) return import.meta.env.VITE_API_URL;
+  const envUrl = import.meta.env.VITE_API_URL;
+  if (envUrl) return normalizeLocalApiUrl(envUrl);
 
   const storedBaseUrl = localStorage.getItem(ACTIVE_API_BASE_URL_KEY);
   if (storedBaseUrl && LOCAL_API_BASE_URLS.includes(storedBaseUrl)) {
-    return storedBaseUrl;
+    return normalizeLocalApiUrl(storedBaseUrl);
   }
 
-  return PRIMARY_LOCAL_API_URL;
+  return normalizeLocalApiUrl(PRIMARY_LOCAL_API_URL);
 };
 
 const API_BASE_URL = getInitialApiBaseUrl();

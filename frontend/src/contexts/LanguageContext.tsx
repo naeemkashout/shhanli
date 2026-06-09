@@ -17,7 +17,7 @@ const translations = {
     "app.subtitle": "منصة الشحن الذكية للجميع",
 
     // Navigation
-    "nav.dashboard": "لوحة التحكم",
+    "nav.dashboard": "الصفحة الرئيسية ",
     "nav.createShipment": "إنشاء شحنة",
     "nav.shipments": "الشحنات",
     "nav.companies": "الشركات",
@@ -247,7 +247,7 @@ const translations = {
     "shipments.estimatedDelivery": "التسليم المتوقع",
 
     // Status translations
-    "status.pending": "معلقة",
+    "status.pending": "قيد المعالجة",
     "status.confirmed": "مؤكدة",
     "status.picked-up": "تم الاستلام",
     "status.in-transit": "في الطريق",
@@ -720,7 +720,7 @@ const translations = {
     "app.subtitle": "Smart Shipping Platform for Everyone",
 
     // Navigation
-    "nav.dashboard": "Dashboard",
+    "nav.dashboard": "Home",
     "nav.createShipment": "Create Shipment",
     "nav.shipments": "Shipments",
     "nav.companies": "Companies",
@@ -954,7 +954,7 @@ const translations = {
     "shipments.estimatedDelivery": "Estimated Delivery",
 
     // Status translations
-    "status.pending": "Pending",
+    "status.pending": "Processing",
     "status.in-transit": "In Transit",
     "status.delivered": "Delivered",
     "status.cancelled": "Cancelled",

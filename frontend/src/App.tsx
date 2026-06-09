@@ -89,7 +89,7 @@ function App() {
     <LanguageProvider>
       <AuthProvider>
         <Router>
-          <div className="App">
+          <div className="App overflow-x-hidden">
             <Routes>
               <Route path="/signin" element={<SignIn />} />
               <Route path="/login" element={<SignIn />} />

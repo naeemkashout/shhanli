@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { normalizeLocalApiUrl } from "@/services/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -21,6 +22,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Search, Edit, Download, Package, User } from "lucide-react";
+import { getStatusColor } from "@/lib/statusUtils";
 import adminService from "@/services/adminService";
 import { toast } from "sonner";
 import { io, Socket } from "socket.io-client";
@@ -103,8 +105,9 @@ export default function ShipmentsManagement() {
     const companyId = String(rawCompanyId || "").trim();
     if (!companyId) return;
 
-    const apiBaseUrl =
-      import.meta.env.VITE_API_URL || "http://localhost:5002/api";
+    const apiBaseUrl = normalizeLocalApiUrl(
+      import.meta.env.VITE_API_URL || "http://localhost:5002/api",
+    );
     const socketUrl = apiBaseUrl.replace(/\/api\/?$/, "");
 
     const socket: Socket = io(socketUrl, {
@@ -195,8 +198,23 @@ export default function ShipmentsManagement() {
       cod: supportsCod,
     });
 
+    let initialStatus = shipment.status || "";
+    if (isCompanyAdmin) {
+      const statusOrder = [
+        "pending",
+        "confirmed",
+        "picked-up",
+        "in-transit",
+        "delivered",
+      ];
+      const currentIndex = statusOrder.indexOf(shipment.status);
+      if (currentIndex > -1 && currentIndex < statusOrder.length - 1) {
+        initialStatus = statusOrder[currentIndex + 1];
+      }
+    }
+
     setUpdateFormData({
-      status: shipment.status || "",
+      status: initialStatus,
       correctedWeight: shipment.package?.weight
         ? String(shipment.package.weight)
         : "",
@@ -264,22 +282,8 @@ export default function ShipmentsManagement() {
     }
   };
 
-  const getStatusColor = (status: string) => {
-    const colors: any = {
-      pending: "bg-yellow-100 text-yellow-800",
-      confirmed: "bg-blue-100 text-blue-800",
-      "picked-up": "bg-purple-100 text-purple-800",
-      "in-transit": "bg-indigo-100 text-indigo-800",
-      "out-for-delivery": "bg-orange-100 text-orange-800",
-      delivered: "bg-green-100 text-green-800",
-      cancelled: "bg-red-100 text-red-800",
-      returned: "bg-gray-100 text-gray-800",
-    };
-    return colors[status] || "bg-gray-100 text-gray-800";
-  };
-
   const allStatusOptions = [
-    { value: "pending", label: tr("معلقة", "Pending"), key: "status.pending" },
+    { value: "pending", label: tr("قيد المعالجة", "Processing"), key: "status.pending" },
     {
       value: "confirmed",
       label: tr("مؤكدة", "Confirmed"),
@@ -364,6 +368,13 @@ export default function ShipmentsManagement() {
   const supportsExpress = selectedCompanyCapabilities.express || !!selectedShipment?.shippingCompany?.expressService?.enabled;
   const supportsPackaging = selectedCompanyCapabilities.packaging || !!selectedShipment?.shippingCompany?.packagingService?.enabled;
   const supportsCod = selectedCompanyCapabilities.cod || !!selectedShipment?.shippingCompany?.codService?.enabled;
+
+  const statusDropdownOptions = isCompanyAdmin
+    ? statusOptions.filter(
+        (option) =>
+          option.value !== selectedShipment?.status || statusOptions.length === 1,
+      )
+    : statusOptions;
 
   return (
     <div className="space-y-6">
@@ -650,12 +661,7 @@ export default function ShipmentsManagement() {
                 }
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg"
               >
-                {(isCompanyAdmin
-                  ? statusOptions.filter(
-                      (option) => option.value !== selectedShipment?.status,
-                    )
-                  : statusOptions
-                ).map((option) => (
+                {statusDropdownOptions.map((option) => (
                   <option key={option.value} value={option.value}>
                     {option.key && typeof t === "function"
                       ? t(option.key)

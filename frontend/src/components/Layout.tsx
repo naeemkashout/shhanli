@@ -335,11 +335,11 @@ export default function Layout({ children }: LayoutProps) {
                 {open && (
                   <div
                     className={`absolute top-12 ${
-                      isRTL ? "right-0" : "left-0"
-                    } w-56 bg-white shadow-lg rounded-md border p-2`}
+                      isRTL ? "left-0 right-auto" : "right-0 left-auto"
+                    } min-w-[12rem] max-w-[calc(100vw-1rem)] w-auto bg-white shadow-lg rounded-md border p-2 overflow-hidden z-50`}
                   >
                     <button
-                      className={`w-full flex items-center gap-2 px-3 py-2 hover:bg-gray-100 rounded ${
+                      className={`w-full whitespace-nowrap flex items-center gap-2 px-3 py-2 hover:bg-gray-100 rounded ${
                         isRTL ? "text-right" : "text-left"
                       }`}
                       onClick={() => {

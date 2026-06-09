@@ -22,6 +22,12 @@ const getCorsOrigins = () => {
     "http://127.0.0.1:5173",
     "http://127.0.0.1:5174",
     "http://127.0.0.1:5175",
+    "http://10.0.2.2:5173",
+    "http://10.0.2.2:5174",
+    "http://10.0.2.2:5175",
+    "http://10.0.3.2:5173",
+    "http://10.0.3.2:5174",
+    "http://10.0.3.2:5175",
   ];
 
   const configuredOrigins = (process.env.CORS_ORIGIN || "")

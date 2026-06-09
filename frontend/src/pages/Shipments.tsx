@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { normalizeLocalApiUrl } from "@/services/api";
 import {
   Select,
   SelectContent,
@@ -38,6 +39,7 @@ import {
   User,
 } from "lucide-react";
 import { useLanguage } from "@/contexts/LanguageContext";
+import { getStatusColor } from "@/lib/statusUtils";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 import jsPDF from "jspdf";
@@ -225,8 +227,9 @@ export default function Shipments() {
     const userId = String(user?.id || "").trim();
     if (!userId) return;
 
-    const apiBaseUrl =
-      import.meta.env.VITE_API_URL || "http://localhost:5001/api";
+    const apiBaseUrl = normalizeLocalApiUrl(
+      import.meta.env.VITE_API_URL || "http://localhost:5001/api",
+    );
     const socketUrl = apiBaseUrl.replace(/\/api\/?$/, "");
 
     const socket: Socket = io(socketUrl, {
@@ -351,29 +354,6 @@ export default function Shipments() {
     nextParams.delete("shipmentId");
     setSearchParams(nextParams, { replace: true });
   }, [shipments, searchParams, setSearchParams]);
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "pending":
-        return "bg-amber-100 text-amber-800";
-      case "confirmed":
-        return "bg-sky-100 text-sky-800";
-      case "picked-up":
-        return "bg-violet-100 text-violet-800";
-      case "in-transit":
-        return "bg-blue-100 text-blue-800";
-      case "out-for-delivery":
-        return "bg-fuchsia-100 text-fuchsia-800";
-      case "delivered":
-        return "bg-green-100 text-green-800";
-      case "cancelled":
-        return "bg-red-100 text-red-800";
-      case "returned":
-        return "bg-slate-200 text-slate-800";
-      default:
-        return "bg-gray-100 text-gray-800";
-    }
-  };
 
   const getStatusIcon = (status: string) => {
     switch (status) {

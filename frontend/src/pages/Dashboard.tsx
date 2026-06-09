@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useAuth } from "@/contexts/AuthContext";
+import { normalizeLocalApiUrl } from "@/services/api";
 import { Link } from "react-router-dom";
 import shipmentService from "@/services/shipmentService";
 import walletService from "@/services/walletService";
@@ -147,8 +148,9 @@ export default function Dashboard() {
     const userId = String(user?.id || "").trim();
     if (!userId) return;
 
-    const apiBaseUrl =
-      import.meta.env.VITE_API_URL || "http://localhost:5001/api";
+    const apiBaseUrl = normalizeLocalApiUrl(
+      import.meta.env.VITE_API_URL || "http://localhost:5001/api",
+    );
     const socketUrl = apiBaseUrl.replace(/\/api\/?$/, "");
 
     const socket: Socket = io(socketUrl, {
@@ -302,8 +304,8 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Stats Cards - Mobile Responsive Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+        {/* Stats Cards - Mobile Responsive Grid (2 columns on mobile) */}
+        <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
           {/* All Statuses */}
           <Card className="hover:shadow-lg transition-shadow">
             <CardContent className="p-4 sm:p-5">
