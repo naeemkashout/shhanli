@@ -22,6 +22,7 @@ const activityLogSchema = new mongoose.Schema(
         "edit-shipment-request",
         "review-edit-request",
         "review-cancellation-request",
+        "review-withdrawal-request",
         "create-contact",
         "update-contact",
         "delete-contact",

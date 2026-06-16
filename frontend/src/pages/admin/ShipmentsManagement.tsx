@@ -776,8 +776,10 @@ export default function ShipmentsManagement() {
                   <div className="space-y-2 text-sm">
                     <p><span className="font-medium">{tr("الاسم:", "Name:")}</span> {selectedShipment.sender?.name || "-"}</p>
                     <p><span className="font-medium">{tr("الهاتف:", "Phone:")}</span> {selectedShipment.sender?.phone || "-"}</p>
-                    <p><span className="font-medium">{tr("الدولة:", "Country:")}</span> {selectedShipment.sender?.country || "-"}</p>
+                    <p><span className="font-medium">{tr("البريد الإلكتروني:", "Email:")}</span> {selectedShipment.sender?.email || "-"}</p>
+                    <p><span className="font-medium">{tr("العنوان:", "Address:")}</span> {selectedShipment.sender?.street || selectedShipment.sender?.address || "-"}</p>
                     <p><span className="font-medium">{tr("المدينة:", "City:")}</span> {selectedShipment.sender?.city || "-"}</p>
+                    <p><span className="font-medium">{tr("الدولة:", "Country:")}</span> {selectedShipment.sender?.country || "-"}</p>
                   </div>
                 </div>
 
@@ -790,8 +792,10 @@ export default function ShipmentsManagement() {
                       <div key={idx} className="border-b last:border-b-0 pb-2 last:pb-0">
                         <p><span className="font-medium">{tr("الاسم:", "Name:")}</span> {r.name || "-"}</p>
                         <p><span className="font-medium">{tr("الهاتف:", "Phone:")}</span> {r.phone || "-"}</p>
-                        <p><span className="font-medium">{tr("الدولة:", "Country:")}</span> {r.country || "-"}</p>
+                        <p><span className="font-medium">{tr("البريد الإلكتروني:", "Email:")}</span> {r.email || "-"}</p>
+                        <p><span className="font-medium">{tr("العنوان:", "Address:")}</span> {r.street || r.address || "-"}</p>
                         <p><span className="font-medium">{tr("المدينة:", "City:")}</span> {r.city || "-"}</p>
+                        <p><span className="font-medium">{tr("الدولة:", "Country:")}</span> {r.country || "-"}</p>
                       </div>
                     ))}
                   </div>
@@ -807,6 +811,10 @@ export default function ShipmentsManagement() {
                   <p><span className="font-medium">{tr("الوزن:", "Weight:")}</span> {selectedShipment.package?.weight ? `${selectedShipment.package.weight} kg` : "-"}</p>
                   <p><span className="font-medium">{tr("القيمة:", "Value:")}</span> {selectedShipment.package?.value ? `${selectedShipment.package.value} ${selectedShipment.package.currency || ""}` : "-"}</p>
                   <p><span className="font-medium">{tr("شركة الشحن:", "Company:")}</span> {selectedShipment.shippingCompany?.name || "-"}</p>
+                  <p><span className="font-medium">{tr("الأبعاد:", "Dimensions:")}</span> {(selectedShipment.package?.length || selectedShipment.package?.width || selectedShipment.package?.height)
+                    ? `${selectedShipment.package?.length || "-"} x ${selectedShipment.package?.width || "-"} x ${selectedShipment.package?.height || "-"} cm`
+                    : selectedShipment.package?.dimensions || "-"}</p>
+                  <p><span className="font-medium">{tr("قابل للكسر:", "Fragile:")}</span> {selectedShipment.package?.fragile ? tr("نعم", "Yes") : tr("لا", "No")}</p>
                 </div>
                 <p className="text-sm"><span className="font-medium">{tr("الوصف:", "Description:")}</span> {selectedShipment.package?.description || "-"}</p>
               </div>
@@ -823,6 +831,12 @@ export default function ShipmentsManagement() {
                   {selectedShipment.package?.packagingRequested
                     ? tr("تم الطلب", "Requested")
                     : tr("لم يتم الطلب", "Not requested")}
+                </p>
+                <p>
+                  <span className="font-medium">{tr("قابل للكسر:", "Fragile:")}</span>{" "}
+                  {selectedShipment.package?.fragile
+                    ? tr("نعم", "Yes")
+                    : tr("لا", "No")}
                 </p>
                 <p>
                   <span className="font-medium">{tr("الدفع عند الاستلام:", "Cash on Delivery:")}</span>{" "}

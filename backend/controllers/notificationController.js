@@ -1,4 +1,6 @@
 const Notification = require("../models/Notification");
+const User = require("../models/User");
+const fcmService = require("../services/fcmService");
 
 // @desc    Get user notifications
 // @route   GET /api/notifications
@@ -129,6 +131,30 @@ exports.markAllAsRead = async (req, res) => {
   }
 };
 
+// @desc    Register device FCM token for current user
+// @route   POST /api/notifications/device-token
+// @access  Private
+exports.registerDeviceToken = async (req, res) => {
+  try {
+    const { token } = req.body || {};
+    if (!token) {
+      return res.status(400).json({ success: false, message: "Token is required" });
+    }
+
+    const user = await User.findById(req.user.id);
+    if (!user) {
+      return res.status(404).json({ success: false, message: "User not found" });
+    }
+
+    user.fcmTokens = Array.from(new Set([...(user.fcmTokens || []), token]));
+    await user.save();
+
+    res.json({ success: true, message: "Device token registered" });
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Error registering device token", error: error.message });
+  }
+};
+
 // Helper for other controllers
 exports.createAndEmitNotification = async (req, payload) => {
   const notification = await Notification.create(payload);
@@ -147,6 +173,26 @@ exports.createAndEmitNotification = async (req, payload) => {
         balance: payload.updatedBalance || undefined,
       });
     }
+  }
+
+  // Send push notification via FCM if possible
+  try {
+    // Prefer explicit tokens provided in payload
+    let tokens = Array.isArray(payload.fcmTokens) ? payload.fcmTokens : [];
+
+    if ((!tokens || tokens.length === 0) && payload.userId) {
+      const user = await User.findById(payload.userId).select("fcmTokens");
+      tokens = (user && Array.isArray(user.fcmTokens)) ? user.fcmTokens : [];
+    }
+
+    if (tokens && tokens.length > 0) {
+      const title = payload.titleEn || payload.title || "";
+      const body = payload.messageEn || payload.message || "";
+      const data = payload.metadata || {};
+      await fcmService.sendToTokens(tokens, { title, body, data });
+    }
+  } catch (err) {
+    console.error("Error sending FCM notification:", err.message);
   }
 
   return notification;

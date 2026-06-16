@@ -8,6 +8,7 @@ import React, {
 import { io, Socket } from "socket.io-client";
 import { normalizeLocalApiUrl } from "@/services/api";
 import authService from "@/services/authService";
+import firebaseInit from "@/firebaseInit";
 import { toast } from "sonner";
 
 interface User {
@@ -74,10 +75,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   });
   const [isLoading, setIsLoading] = useState(true);
   const socketRef = useRef<Socket | null>(null);
+  const firebaseMessagingInitializedRef = useRef(false);
   const tr = (ar: string, en: string) =>
     ((localStorage.getItem("language") as "ar" | "en") || "ar") === "ar"
       ? ar
       : en;
+
+  const initFirebaseMessagingForUser = async (currentUser: User | null) => {
+    if (!currentUser) return;
+
+    if (firebaseMessagingInitializedRef.current) {
+      console.log('[AuthContext] Firebase messaging already initialized, skipping duplicate init');
+      return;
+    }
+
+    try {
+      await firebaseInit.initFirebaseMessaging(firebaseInit.defaultSendTokenToServer);
+      firebaseMessagingInitializedRef.current = true;
+    } catch (err) {
+      console.warn('Firebase messaging init failed', err);
+    }
+  };
 
   useEffect(() => {
     const initAuth = async () => {
@@ -107,6 +125,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
+    initFirebaseMessagingForUser(user);
+
     const userId = String(user?.id || "").trim();
     const apiBaseUrl = normalizeLocalApiUrl(
       import.meta.env.VITE_API_URL || "http://localhost:5001/api",
@@ -172,6 +192,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (response.success) {
         setUser(response.data.user);
+        initFirebaseMessagingForUser(response.data.user);
         return true;
       }
 

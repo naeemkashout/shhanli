@@ -189,7 +189,7 @@ export default function Balance() {
   };
 
   const getMinWithdrawAmount = (currency: Currency) => {
-    return currency === "SYP" ? 100000 : 50;
+    return currency === "SYP" ? 250 : 10;
   };
 
   const getCurrentBalance = (currency: Currency) => {

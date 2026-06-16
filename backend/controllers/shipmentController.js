@@ -629,7 +629,15 @@ exports.createShipment = async (req, res) => {
 // @access  Private
 exports.getUserShipments = async (req, res) => {
   try {
-    const { status, page = 1, limit = 10 } = req.query;
+    const {
+      status,
+      search,
+      company,
+      dateFrom,
+      dateTo,
+      page = 1,
+      limit = 10,
+    } = req.query;
 
     const query = {};
 
@@ -639,8 +647,8 @@ exports.getUserShipments = async (req, res) => {
           success: true,
           data: [],
           pagination: {
-            page: parseInt(page),
-            limit: parseInt(limit),
+            page: parseInt(page, 10),
+            limit: parseInt(limit, 10),
             total: 0,
             pages: 0,
           },
@@ -653,6 +661,42 @@ exports.getUserShipments = async (req, res) => {
     }
 
     if (status) query.status = status;
+
+    if (company && company !== "all") {
+      query["shippingCompany.name"] = company;
+    }
+
+    if (dateFrom || dateTo) {
+      query.createdAt = {};
+      if (dateFrom) {
+        const fromDate = new Date(dateFrom);
+        if (!Number.isNaN(fromDate.getTime())) {
+          query.createdAt.$gte = fromDate;
+        }
+      }
+      if (dateTo) {
+        const toDate = new Date(dateTo);
+        if (!Number.isNaN(toDate.getTime())) {
+          toDate.setHours(23, 59, 59, 999);
+          query.createdAt.$lte = toDate;
+        }
+      }
+      if (Object.keys(query.createdAt).length === 0) {
+        delete query.createdAt;
+      }
+    }
+
+    if (search) {
+      query.$or = [
+        { trackingNumber: { $regex: search, $options: "i" } },
+        { "sender.name": { $regex: search, $options: "i" } },
+        { "sender.phone": { $regex: search, $options: "i" } },
+        { "sender.email": { $regex: search, $options: "i" } },
+        { "receivers.0.name": { $regex: search, $options: "i" } },
+        { "receivers.0.phone": { $regex: search, $options: "i" } },
+        { "receivers.0.email": { $regex: search, $options: "i" } },
+      ];
+    }
 
     const shipments = await Shipment.find(query)
       .sort({ createdAt: -1 })

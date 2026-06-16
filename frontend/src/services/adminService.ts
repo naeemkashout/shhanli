@@ -171,6 +171,7 @@ class AdminService {
   async getCancellationRequests(params?: {
     status?: "pending" | "approved" | "rejected" | "all";
     search?: string;
+    companyId?: string;
     page?: number;
     limit?: number;
   }): Promise<any> {
@@ -187,6 +188,7 @@ class AdminService {
   async getEditRequests(params?: {
     status?: "pending" | "approved" | "rejected" | "all";
     search?: string;
+    companyId?: string;
     page?: number;
     limit?: number;
   }): Promise<any> {

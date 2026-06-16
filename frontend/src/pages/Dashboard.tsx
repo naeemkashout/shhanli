@@ -200,7 +200,7 @@ export default function Dashboard() {
 
   if (loading) {
     return (
-      <div className="min-h-screen overflow-y-auto bg-gray-50 flex items-center justify-center lg:h-screen lg:overflow-hidden">
+      <div className="h-[calc(100vh-176px)] overflow-hidden bg-gray-50 flex items-center justify-center">
         <div className="text-center">
           <Package className="w-12 h-12 text-gray-400 mx-auto mb-4 animate-pulse" />
           <p className="text-gray-600">
@@ -213,10 +213,10 @@ export default function Dashboard() {
 
   return (
     <div
-      className="min-h-screen overflow-y-auto bg-gray-50 lg:h-screen lg:overflow-hidden"
+      className="h-[calc(100vh-176px)] overflow-hidden bg-gray-50"
       dir={isRTL ? "rtl" : "ltr"}
     >
-      <div className="max-w-7xl mx-auto space-y-4 sm:space-y-6 lg:h-full lg:overflow-hidden">
+      <div className="max-w-7xl mx-auto space-y-4 sm:space-y-6 h-full overflow-hidden">
         {/* Header - Mobile Optimized */}
         <div
           className={`text-center ${language === "ar" ? "sm:text-right" : "sm:text-left"}`}

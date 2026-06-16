@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
+import { normalizeLocalApiUrl } from "@/services/api";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { Input } from "@/components/ui/input";
@@ -101,8 +102,9 @@ export default function Layout({ children }: LayoutProps) {
     const userId = String(user?.id || "").trim();
     if (!userId) return;
 
-    const apiBaseUrl =
-      import.meta.env.VITE_API_URL || "http://localhost:5001/api";
+    const apiBaseUrl = normalizeLocalApiUrl(
+      import.meta.env.VITE_API_URL || "http://localhost:5001/api",
+    );
     const socketUrl = apiBaseUrl.replace(/\/api\/?$/, "");
 
     const socket: Socket = io(socketUrl, {
@@ -224,6 +226,38 @@ export default function Layout({ children }: LayoutProps) {
       : []),
   ];
 
+  const mobileNavItems = [
+    {
+      name: t("nav.dashboard"),
+      href: "/dashboard",
+      icon: Home,
+    },
+    {
+      name: t("nav.createShipment"),
+      href: "/create-shipment",
+      icon: Plus,
+    },
+    {
+      name: t("nav.balance"),
+      href: "/balance",
+      icon: CreditCard,
+    },
+    {
+      name: t("nav.financialTransactions"),
+      href: "/financial-transactions",
+      icon: ScrollText,
+    },
+    {
+      name: t("nav.shipments"),
+      href: "/shipments",
+      icon: Truck,
+    },
+  ];
+
+  const drawerNavigationItems = navigationItems.filter(
+    (item) => !mobileNavItems.some((mobileItem) => mobileItem.href === item.href),
+  );
+
   const handleLogout = async () => {
     setIsOpen(false);
     await logout();
@@ -246,7 +280,7 @@ export default function Layout({ children }: LayoutProps) {
       dir={isRTL ? "rtl" : "ltr"}
     >
       {/* Top Navigation Bar */}
-      <div className="bg-white border-b border-gray-200 sticky top-0 z-50">
+      <div className="bg-white border-b border-gray-200 fixed inset-x-0 top-0 z-50">
         <div className="w-full px-2 sm:px-3 lg:px-4">
           <div className="flex items-center justify-between h-14 sm:h-16">
             {/* Logo */}
@@ -311,7 +345,7 @@ export default function Layout({ children }: LayoutProps) {
                 )}
               </Button>
               {/* User Menu - Show on desktop only */}
-              <div className="relative">
+              <div className="hidden md:relative md:flex">
                 <div
                   className="flex items-center gap-3 cursor-pointer"
                   onClick={() => setOpen(!open)}
@@ -335,11 +369,11 @@ export default function Layout({ children }: LayoutProps) {
                 {open && (
                   <div
                     className={`absolute top-12 ${
-                      isRTL ? "left-0 right-auto" : "right-0 left-auto"
-                    } min-w-[12rem] max-w-[calc(100vw-1rem)] w-auto bg-white shadow-lg rounded-md border p-2 overflow-hidden z-50`}
+                      isRTL ? "right-0" : "left-0"
+                    } w-56 bg-white shadow-lg rounded-md border p-2`}
                   >
                     <button
-                      className={`w-full whitespace-nowrap flex items-center gap-2 px-3 py-2 hover:bg-gray-100 rounded ${
+                      className={`w-full flex items-center gap-2 px-3 py-2 hover:bg-gray-100 rounded ${
                         isRTL ? "text-right" : "text-left"
                       }`}
                       onClick={() => {
@@ -502,7 +536,7 @@ export default function Layout({ children }: LayoutProps) {
 
                       <nav className="flex-1 py-4 px-4">
                         <div className="space-y-1">
-                          {navigationItems.map((item) => {
+                          {drawerNavigationItems.map((item) => {
                             const Icon = item.icon;
                             const isActive = location.pathname === item.href;
 
@@ -525,6 +559,52 @@ export default function Layout({ children }: LayoutProps) {
                               </button>
                             );
                           })}
+
+                          <button
+                            onClick={() => handleNavClick("/profile")}
+                            className={`w-full flex items-center gap-3 px-3 py-3 rounded-lg text-sm font-medium transition-colors min-h-[48px] ${
+                              isRTL
+                                ? "justify-start text-left"
+                                : "flex-row-reverse justify-end text-right"
+                            } ${
+                              location.pathname === "/profile"
+                                ? "bg-blue-100 text-blue-700"
+                                : "text-gray-600 hover:text-gray-900 hover:bg-gray-100"
+                            }`}
+                          >
+                            <User className="w-5 h-5" />
+                            {language === "ar" ? "الملف الشخصي" : "Profile"}
+                          </button>
+                          <button
+                            onClick={() => handleNavClick("/about-us")}
+                            className={`w-full flex items-center gap-3 px-3 py-3 rounded-lg text-sm font-medium transition-colors min-h-[48px] ${
+                              isRTL
+                                ? "justify-start text-left"
+                                : "flex-row-reverse justify-end text-right"
+                            } ${
+                              location.pathname === "/about-us"
+                                ? "bg-blue-100 text-blue-700"
+                                : "text-gray-600 hover:text-gray-900 hover:bg-gray-100"
+                            }`}
+                          >
+                            <Info className="w-5 h-5" />
+                            {language === "ar" ? "من نحن" : "About Us"}
+                          </button>
+                          <button
+                            onClick={() => handleNavClick("/contact-us")}
+                            className={`w-full flex items-center gap-3 px-3 py-3 rounded-lg text-sm font-medium transition-colors min-h-[48px] ${
+                              isRTL
+                                ? "justify-start text-left"
+                                : "flex-row-reverse justify-end text-right"
+                            } ${
+                              location.pathname === "/contact-us"
+                                ? "bg-blue-100 text-blue-700"
+                                : "text-gray-600 hover:text-gray-900 hover:bg-gray-100"
+                            }`}
+                          >
+                            <MessageCircle className="w-5 h-5" />
+                            {language === "ar" ? "تواصل معنا" : "Contact Us"}
+                          </button>
                         </div>
                       </nav>
 
@@ -569,9 +649,32 @@ export default function Layout({ children }: LayoutProps) {
       </div>
 
       {/* Main Content */}
-      <main className="w-full px-2 sm:px-3 lg:px-4 pt-2 sm:pt-3 lg:pt-4 pb-4 sm:pb-6 lg:pb-8">
+      <main className="w-full px-2 sm:px-3 lg:px-4 pt-16 sm:pt-16 lg:pt-16 pb-28 sm:pb-6 lg:pb-8">
         {children}
       </main>
+
+      <div className="lg:hidden fixed inset-x-0 bottom-0 z-50 border-t border-gray-200 bg-white shadow-inner">
+        <div className="mx-auto flex max-w-5xl justify-between px-2 py-2">
+          {mobileNavItems.map((item) => {
+            const Icon = item.icon;
+            const isActive = location.pathname === item.href;
+            return (
+              <button
+                key={item.href}
+                onClick={() => handleNavClick(item.href)}
+                className={`flex flex-col items-center justify-center gap-1 rounded-xl px-2 py-1 text-xs transition-colors ${
+                  isActive
+                    ? "text-blue-700"
+                    : "text-gray-500 hover:text-gray-900"
+                }`}
+              >
+                <Icon className="w-5 h-5" />
+                <span className="text-[10px] leading-tight">{item.name}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 }

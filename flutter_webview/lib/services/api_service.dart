@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/notification_item.dart';
 import '../models/shipment.dart';
+import '../models/transaction.dart';
 import '../models/shipping_company.dart';
 import '../models/user.dart';
 
@@ -130,6 +131,24 @@ class ApiService {
       refreshToken: data['refreshToken'],
       authenticatedUser: user,
     );
+  }
+
+  Future<void> registerDeviceToken(String token) async {
+    if (!isAuthenticated) {
+      throw ApiException('User must be authenticated to register device token');
+    }
+
+    final uri = Uri.parse('$baseUrl/notifications/device-token');
+    final response = await http.post(
+      uri,
+      headers: _headers,
+      body: jsonEncode({'deviceToken': token}),
+    );
+
+    final body = jsonDecode(response.body);
+    if (response.statusCode != 200 || body['success'] != true) {
+      throw ApiException(body['message'] ?? 'Unable to register device token');
+    }
   }
 
   Future<void> register({
@@ -308,6 +327,28 @@ class ApiService {
 
     final data = body['data'] as List<dynamic>;
     return data.map((json) => Shipment.fromJson(json)).toList();
+  }
+
+  Future<Map<String, dynamic>> getTransactions(
+      {int page = 1, int limit = 10}) async {
+    final uri =
+        Uri.parse('$baseUrl/wallet/transactions?page=$page&limit=$limit');
+    final response = await http.get(uri, headers: _headers);
+    final body = jsonDecode(response.body);
+
+    if (response.statusCode != 200 || body['success'] != true) {
+      throw ApiException(body['message'] ?? 'Unable to fetch transactions');
+    }
+
+    final data = body['data'] as List<dynamic>;
+    final transactions =
+        data.map((json) => WalletTransaction.fromJson(json)).toList();
+    final pagination = body['pagination'] ?? {};
+
+    return {
+      'transactions': transactions,
+      'pagination': pagination,
+    };
   }
 
   Future<Shipment> getShipmentDetail(String id) async {

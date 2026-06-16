@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import shippingCompanyService from "@/services/shippingCompanyService";
+import { Button } from "@/components/ui/button";
 import { useLanguage } from "@/contexts/LanguageContext";
 
 type CompanyOffer = {
@@ -62,6 +63,8 @@ export default function WelcomePage({
   const [slides, setSlides] = useState<Slide[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [now, setNow] = useState(() => Date.now());
+  const [page, setPage] = useState(1);
+  const [limit] = useState(6);
 
   useEffect(() => {
     const loadOffers = async () => {
@@ -108,6 +111,13 @@ export default function WelcomePage({
   }, []);
 
   useEffect(() => {
+    const pages = Math.max(1, Math.ceil(slides.length / limit));
+    if (page > pages) {
+      setPage(pages);
+    }
+  }, [slides.length, page, limit]);
+
+  useEffect(() => {
     if (!autoPlay) return undefined;
 
     const timer = window.setInterval(() => {
@@ -116,6 +126,8 @@ export default function WelcomePage({
 
     return () => window.clearInterval(timer);
   }, [autoPlay, autoPlayIntervalMs]);
+
+  const totalPages = Math.max(1, Math.ceil(slides.length / limit));
 
   const getOfferText = (
     slide: Slide,
@@ -272,113 +284,145 @@ export default function WelcomePage({
             {tr("لا توجد عروض حالياً", "No offers available currently")}
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-4">
-            {slides.map((slide, index) => {
-              const ctaText = getOfferText(slide, "ctaText");
-              const description = getOfferDescription(slide);
-              const priceItems = offerPriceItems(slide);
-              const remainingTime = getRemainingTime(slide.endAt);
-              const offerCard = (
-                <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm transition-shadow hover:shadow-md h-full">
-                  <div className="flex flex-col gap-2.5 p-3 sm:p-4 h-full">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                        {tr("عرض", "Offer")} {index + 1}
-                      </p>
-                      {remainingTime ? (
-                        <div className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-0.5 text-[11px] font-semibold text-amber-700">
-                          {tr("ينتهي خلال", "Ends in")}: {remainingTime}
-                        </div>
-                      ) : null}
-                    </div>
-
-                    <div
-                      className="rounded-2xl px-3 py-3 text-center text-white"
-                      style={{
-                        background:
-                          slide.background ||
-                          "linear-gradient(135deg, #0f172a 0%, #1e3a8a 55%, #0f766e 100%)",
-                      }}
-                    >
-                      <p className="text-lg sm:text-xl font-extrabold tracking-wide">
-                        {slide.companyName}
-                      </p>
-                    </div>
-
-                    <div className="space-y-2">
-                      <h2 className="text-sm md:text-lg font-bold text-slate-900 line-clamp-2 text-center">
-                        {getOfferText(slide, "title")}
-                      </h2>
-                      {getOfferText(slide, "subtitle") ? (
-                        <p className="text-xs sm:text-sm text-slate-700 line-clamp-1 text-center">
-                          {getOfferText(slide, "subtitle")}
-                        </p>
-                      ) : null}
-                      {description ? (
-                        <p className="text-xs sm:text-sm leading-5 text-slate-600 line-clamp-2 text-center">
-                          {description}
-                        </p>
-                      ) : null}
-                      {priceItems.length > 0 ? (
-                        <div className="grid gap-1.5 pt-0.5 sm:grid-cols-2">
-                          {priceItems.map((item) => (
-                            <div
-                              key={`${slide._id || slide.companyId}-${item.label}`}
-                              className="rounded-2xl border border-slate-200 bg-slate-50 px-2.5 py-1.5"
-                            >
-                              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                                {item.label}
-                              </p>
-                              <p className="mt-0.5 text-xs font-bold text-slate-900">
-                                {item.value || item.fallback}
-                              </p>
+          <>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-4">
+              {slides
+                .slice((page - 1) * limit, page * limit)
+                .map((slide, index) => {
+                  const ctaText = getOfferText(slide, "ctaText");
+                  const description = getOfferDescription(slide);
+                  const priceItems = offerPriceItems(slide);
+                  const remainingTime = getRemainingTime(slide.endAt);
+                  const offerCard = (
+                    <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm transition-shadow hover:shadow-md h-full">
+                      <div className="flex flex-col gap-2.5 p-3 sm:p-4 h-full">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                            {tr("عرض", "Offer")} {index + 1}
+                          </p>
+                          {remainingTime ? (
+                            <div className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-0.5 text-[11px] font-semibold text-amber-700">
+                              {tr("ينتهي خلال", "Ends in")}: {remainingTime}
                             </div>
-                          ))}
+                          ) : null}
                         </div>
-                      ) : null}
+
+                        <div
+                          className="rounded-2xl px-3 py-3 text-center text-white"
+                          style={{
+                            background:
+                              slide.background ||
+                              "linear-gradient(135deg, #0f172a 0%, #1e3a8a 55%, #0f766e 100%)",
+                          }}
+                        >
+                          <p className="text-lg sm:text-xl font-extrabold tracking-wide">
+                            {slide.companyName}
+                          </p>
+                        </div>
+
+                        <div className="space-y-2">
+                          <h2 className="text-sm md:text-lg font-bold text-slate-900 line-clamp-2 text-center">
+                            {getOfferText(slide, "title")}
+                          </h2>
+                          {getOfferText(slide, "subtitle") ? (
+                            <p className="text-xs sm:text-sm text-slate-700 line-clamp-1 text-center">
+                              {getOfferText(slide, "subtitle")}
+                            </p>
+                          ) : null}
+                          {description ? (
+                            <p className="text-xs sm:text-sm leading-5 text-slate-600 line-clamp-2 text-center">
+                              {description}
+                            </p>
+                          ) : null}
+                          {priceItems.length > 0 ? (
+                            <div className="grid gap-1.5 pt-0.5 sm:grid-cols-2">
+                              {priceItems.map((item) => (
+                                <div
+                                  key={`${slide._id || slide.companyId}-${item.label}`}
+                                  className="rounded-2xl border border-slate-200 bg-slate-50 px-2.5 py-1.5"
+                                >
+                                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                                    {item.label}
+                                  </p>
+                                  <p className="mt-0.5 text-xs font-bold text-slate-900">
+                                    {item.value || item.fallback}
+                                  </p>
+                                </div>
+                              ))}
+                            </div>
+                          ) : null}
+                        </div>
+
+                        {ctaText ? (
+                          /^https?:\/\//i.test(String(slide.ctaLink || "")) ? (
+                            <a
+                              href={String(slide.ctaLink || "")}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="inline-flex w-fit items-center self-center rounded-lg bg-slate-900 px-3 py-1.5 text-xs sm:text-sm font-semibold text-white hover:bg-slate-800"
+                            >
+                              {ctaText}
+                            </a>
+                          ) : (
+                            <Link
+                              to={String(slide.ctaLink || "/offers")}
+                              className="inline-flex w-fit items-center self-center rounded-lg bg-slate-900 px-3 py-1.5 text-xs sm:text-sm font-semibold text-white hover:bg-slate-800"
+                            >
+                              {ctaText}
+                            </Link>
+                          )
+                        ) : null}
+                      </div>
                     </div>
+                  );
 
-                    {ctaText ? (
-                      /^https?:\/\//i.test(String(slide.ctaLink || "")) ? (
-                        <a
-                          href={String(slide.ctaLink || "")}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="inline-flex w-fit items-center self-center rounded-lg bg-slate-900 px-3 py-1.5 text-xs sm:text-sm font-semibold text-white hover:bg-slate-800"
-                        >
-                          {ctaText}
-                        </a>
-                      ) : (
-                        <Link
-                          to={String(slide.ctaLink || "/offers")}
-                          className="inline-flex w-fit items-center self-center rounded-lg bg-slate-900 px-3 py-1.5 text-xs sm:text-sm font-semibold text-white hover:bg-slate-800"
-                        >
-                          {ctaText}
-                        </Link>
-                      )
-                    ) : null}
-                  </div>
+                  if (
+                    slide.ctaLink &&
+                    !/^https?:\/\//i.test(String(slide.ctaLink))
+                  ) {
+                    return (
+                      <div key={slide._id || `${slide.companyId}-${index}`}>
+                        {offerCard}
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div key={slide._id || `${slide.companyId}-${index}`}>
+                      {offerCard}
+                    </div>
+                  );
+                })}
+            </div>
+
+            {totalPages > 1 && (
+              <div className="flex items-center justify-between gap-3 mt-6">
+                <p className="text-sm text-slate-600">
+                  {language === "ar"
+                    ? `الصفحة ${page} من ${totalPages}`
+                    : `Page ${page} of ${totalPages}`}
+                </p>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setPage((prev) => Math.max(prev - 1, 1))}
+                    disabled={page === 1}
+                  >
+                    {language === "ar" ? "السابق" : "Previous"}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setPage((prev) => Math.min(prev + 1, totalPages))}
+                    disabled={page === totalPages}
+                  >
+                    {language === "ar" ? "التالي" : "Next"}
+                  </Button>
                 </div>
-              );
-
-              if (
-                slide.ctaLink &&
-                !/^https?:\/\//i.test(String(slide.ctaLink))
-              ) {
-                return (
-                  <div key={slide._id || `${slide.companyId}-${index}`}>
-                    {offerCard}
-                  </div>
-                );
-              }
-
-              return (
-                <div key={slide._id || `${slide.companyId}-${index}`}>
-                  {offerCard}
-                </div>
-              );
-            })}
-          </div>
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>

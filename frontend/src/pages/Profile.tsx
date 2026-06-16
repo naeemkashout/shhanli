@@ -485,9 +485,13 @@ export default function Profile() {
                     <RadioGroupItem
                       value="individual"
                       id="individual"
-                      className={`absolute ${
-                        isRTL ? "left-4" : "right-4"
-                      } top-4`}
+                      className={
+                        [
+                          "absolute",
+                          isRTL ? "left-4" : "right-4",
+                          "top-4",
+                        ].join(" ")
+                      }
                     />
                     <Label
                       htmlFor="individual"
@@ -536,9 +540,13 @@ export default function Profile() {
                     <RadioGroupItem
                       value="merchant"
                       id="merchant"
-                      className={`absolute ${
-                        isRTL ? "left-4" : "right-4"
-                      } top-4`}
+                      className={
+                        [
+                          "absolute",
+                          isRTL ? "left-4" : "right-4",
+                          "top-4",
+                        ].join(" ")
+                      }
                     />
                     <Label htmlFor="merchant" className="cursor-pointer block">
                       <div className="flex flex-col items-center text-center space-y-4">

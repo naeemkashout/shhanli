@@ -596,6 +596,34 @@ exports.getDashboardStats = async (req, res) => {
       SYP: revenueData.find((r) => r._id === "SYP")?.total || 0,
     };
 
+    const withdrawalMatch = {
+      type: "withdrawal",
+      status: "pending",
+    };
+
+    const withdrawalRequestsData = await Transaction.aggregate([
+      { $match: withdrawalMatch },
+      {
+        $lookup: {
+          from: "users",
+          localField: "userId",
+          foreignField: "_id",
+          as: "user",
+        },
+      },
+      { $unwind: { path: "$user", preserveNullAndEmptyArrays: true } },
+      ...(isCompanyAdmin
+        ? [{ $match: { "user.shippingCompanyId": companyId } }]
+        : []),
+      {
+        $group: {
+          _id: "$currency",
+          total: { $sum: "$amount" },
+          count: { $sum: 1 },
+        },
+      },
+    ]);
+
     const companyMatchWhenAdmin = isCompanyAdmin
       ? { "shipment.shippingCompany.id": companyId }
       : {};
@@ -726,6 +754,71 @@ exports.getDashboardStats = async (req, res) => {
       { $sort: { date: 1 } },
     ]);
 
+    const pendingCancellationRequests = await Shipment.countDocuments({
+      "cancellationRequest.isRequested": true,
+      "cancellationRequest.status": "pending",
+      ...(isCompanyAdmin ? { "shippingCompany.id": companyId } : {}),
+    });
+
+    const pendingEditRequests = await Shipment.countDocuments({
+      "editRequest.isRequested": true,
+      "editRequest.status": "pending",
+      ...(isCompanyAdmin ? { "shippingCompany.id": companyId } : {}),
+    });
+
+    let companiesSummary = {
+      total: 0,
+      active: 0,
+      items: [],
+    };
+
+    if (!isCompanyAdmin) {
+      const companies = await ShippingCompany.find().lean();
+      const shippingCounts = await Shipment.aggregate([
+        {
+          $group: {
+            _id: "$shippingCompany.id",
+            shipmentsCount: { $sum: 1 },
+          },
+        },
+      ]);
+      const userCounts = await User.aggregate([
+        {
+          $match: {
+            shippingCompanyId: { $exists: true, $ne: null },
+          },
+        },
+        {
+          $group: {
+            _id: { $toString: "$shippingCompanyId" },
+            usersCount: { $sum: 1 },
+          },
+        },
+      ]);
+
+      const shippingCountsMap = shippingCounts.reduce((map, item) => {
+        map[item._id] = item.shipmentsCount;
+        return map;
+      }, {});
+
+      const userCountsMap = userCounts.reduce((map, item) => {
+        map[item._id] = item.usersCount;
+        return map;
+      }, {});
+
+      companiesSummary = {
+        total: companies.length,
+        active: companies.filter((company) => company.isActive).length,
+        items: companies.map((company) => ({
+          _id: company._id,
+          name: company.name,
+          code: company.code,
+          usersCount: userCountsMap[company._id.toString()] || 0,
+          shipmentsCount: shippingCountsMap[company._id.toString()] || 0,
+        })),
+      };
+    }
+
     // Recent activities
     const recentActivities = await ActivityLog.find()
       .populate("userId", "name email")
@@ -755,6 +848,23 @@ exports.getDashboardStats = async (req, res) => {
           new: newShipments,
         },
         revenue,
+        withdrawalRequests: {
+          pending: withdrawalRequestsData.reduce(
+            (sum, item) => sum + (item.count || 0),
+            0,
+          ),
+          pendingAmountUSD:
+            withdrawalRequestsData.find((item) => item._id === "USD")?.total ||
+            0,
+          pendingAmountSYP:
+            withdrawalRequestsData.find((item) => item._id === "SYP")?.total ||
+            0,
+        },
+        requestCounts: {
+          editRequests: pendingEditRequests,
+          cancellationRequests: pendingCancellationRequests,
+        },
+        companies: companiesSummary,
         companyRevenue: companyRevenueData,
         dailyRevenue: dailyRevenueData,
         recentActivities,
@@ -1121,7 +1231,7 @@ exports.getAllShipments = async (req, res) => {
 // @access  Private/Admin/CompanyAdmin
 exports.getCancellationRequests = async (req, res) => {
   try {
-    const { status = "pending", search, page = 1, limit = 10 } = req.query;
+    const { status = "pending", search, companyId, page = 1, limit = 10 } = req.query;
 
     const query = {
       "cancellationRequest.status":
@@ -1146,14 +1256,34 @@ exports.getCancellationRequests = async (req, res) => {
       }
 
       query["shippingCompany.id"] = req.user.shippingCompanyId.toString();
+    } else if (companyId) {
+      query["shippingCompany.id"] = String(companyId);
     }
 
     if (search) {
+      const userMatches = await User.find(
+        {
+          $or: [
+            { name: { $regex: search, $options: "i" } },
+            { email: { $regex: search, $options: "i" } },
+            { phone: { $regex: search, $options: "i" } },
+          ],
+        },
+        "_id",
+      );
+
+      const userIds = userMatches.map((user) => user._id);
+
       query.$or = [
         { trackingNumber: { $regex: search, $options: "i" } },
         { "sender.name": { $regex: search, $options: "i" } },
         { "receivers.0.name": { $regex: search, $options: "i" } },
+        { "cancellationRequest.reason": { $regex: search, $options: "i" } },
       ];
+
+      if (userIds.length > 0) {
+        query.$or.push({ userId: { $in: userIds } });
+      }
     }
 
     const shipments = await Shipment.find(query)
@@ -1302,7 +1432,7 @@ exports.reviewCancellationRequest = async (req, res) => {
 // @access  Private/Admin/CompanyAdmin
 exports.getEditRequests = async (req, res) => {
   try {
-    const { status = "pending", search, page = 1, limit = 10 } = req.query;
+    const { status = "pending", search, companyId, page = 1, limit = 10 } = req.query;
 
     const query = {
       "editRequest.status":
@@ -1327,15 +1457,34 @@ exports.getEditRequests = async (req, res) => {
       }
 
       query["shippingCompany.id"] = req.user.shippingCompanyId.toString();
+    } else if (companyId) {
+      query["shippingCompany.id"] = String(companyId);
     }
 
     if (search) {
+      const userMatches = await User.find(
+        {
+          $or: [
+            { name: { $regex: search, $options: "i" } },
+            { email: { $regex: search, $options: "i" } },
+            { phone: { $regex: search, $options: "i" } },
+          ],
+        },
+        "_id",
+      );
+
+      const userIds = userMatches.map((user) => user._id);
+
       query.$or = [
         { trackingNumber: { $regex: search, $options: "i" } },
         { "sender.name": { $regex: search, $options: "i" } },
         { "receivers.0.name": { $regex: search, $options: "i" } },
         { "editRequest.requestedChanges": { $regex: search, $options: "i" } },
       ];
+
+      if (userIds.length > 0) {
+        query.$or.push({ userId: { $in: userIds } });
+      }
     }
 
     const shipments = await Shipment.find(query)
@@ -1952,7 +2101,10 @@ exports.getAllTransactions = async (req, res) => {
       if (dateFrom) match.createdAt.$gte = new Date(dateFrom);
       if (dateTo) match.createdAt.$lte = new Date(dateTo);
       if (search) {
-        match.$or = [{ reference: { $regex: search, $options: "i" } }];
+        match.$or = [
+          { reference: { $regex: search, $options: "i" } },
+          { description: { $regex: search, $options: "i" } },
+        ];
       }
 
       const aggregatePipeline = [
@@ -2029,6 +2181,12 @@ exports.getAllTransactions = async (req, res) => {
     const query = {};
     if (type) query.type = type;
     if (status) query.status = status;
+    if (search) {
+      query.$or = [
+        { reference: { $regex: search, $options: "i" } },
+        { description: { $regex: search, $options: "i" } },
+      ];
+    }
 
     if (req.user?.role === "company-admin") {
       const companyId = req.user.shippingCompanyId?.toString();
@@ -2116,6 +2274,175 @@ exports.getAllTransactions = async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Error fetching transactions",
+      error: error.message,
+    });
+  }
+};
+
+// @desc    Review withdrawal request
+// @route   PUT /api/admin/transactions/:id/withdrawal-review
+// @access  Private/Admin
+exports.reviewWithdrawalRequest = async (req, res) => {
+  try {
+    const { action, note } = req.body || {};
+
+    if (!["approve", "reject"].includes(action)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid action",
+      });
+    }
+
+    const transaction = await Transaction.findById(req.params.id);
+    if (!transaction || transaction.type !== "withdrawal") {
+      return res.status(404).json({
+        success: false,
+        message: "Withdrawal request not found",
+      });
+    }
+
+    if (transaction.status !== "pending") {
+      if (transaction.status === "completed" && action === "approve") {
+        return res.json({
+          success: true,
+          message: "Withdrawal request already approved",
+          data: transaction,
+        });
+      }
+
+      if (transaction.status === "cancelled" && action === "reject") {
+        return res.json({
+          success: true,
+          message: "Withdrawal request already rejected",
+          data: transaction,
+        });
+      }
+
+      return res.status(400).json({
+        success: false,
+        message: `No pending withdrawal request to review. Current status: ${transaction.status}`,
+      });
+    }
+
+    const user = await User.findById(transaction.userId);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found for this withdrawal request",
+      });
+    }
+
+    const reviewNote = String(note || "").trim();
+    const amount = Number(transaction.amount || 0);
+    const currency = String(transaction.currency || "USD").toUpperCase();
+    let updatedUser = null;
+
+    if (action === "approve") {
+      const currentBalance = Number(user.balance?.[currency] || 0);
+      if (currentBalance < amount) {
+        return res.status(400).json({
+          success: false,
+          message: "Insufficient balance to approve withdrawal request",
+        });
+      }
+
+      updatedUser = await User.findOneAndUpdate(
+        {
+          _id: user._id,
+          [`balance.${currency}`]: { $gte: amount },
+        },
+        {
+          $inc: { [`balance.${currency}`]: -amount },
+        },
+        {
+          new: true,
+          runValidators: true,
+        },
+      );
+
+      if (!updatedUser) {
+        return res.status(500).json({
+          success: false,
+          message: "Unable to update user balance for withdrawal approval",
+        });
+      }
+
+      transaction.status = "completed";
+      transaction.processedBy = req.user.id;
+      transaction.processedAt = new Date();
+      transaction.balanceBefore = currentBalance;
+      transaction.balanceAfter = Number(updatedUser.balance?.[currency] || 0);
+      transaction.description = `Approved by platform admin${reviewNote ? `: ${reviewNote}` : ""}`;
+    } else {
+      transaction.status = "cancelled";
+      transaction.processedBy = req.user.id;
+      transaction.processedAt = new Date();
+      transaction.description = `Rejected by platform admin${reviewNote ? `: ${reviewNote}` : ""}`;
+    }
+
+    await transaction.save();
+
+    await ActivityLog.create({
+      userId: req.user.id,
+      action: "review-withdrawal-request",
+      category: "wallet",
+      description: `${action === "approve" ? "Approved" : "Rejected"} withdrawal request ${transaction.reference}`,
+      targetId: transaction._id,
+      targetModel: "Transaction",
+      metadata: {
+        action,
+        note: reviewNote,
+        amount,
+        currency,
+      },
+    });
+
+    await createAndEmitNotification(req, {
+      userId: user._id,
+      type: "wallet",
+      titleAr:
+        action === "approve"
+          ? "تم قبول طلب السحب"
+          : "تم رفض طلب السحب",
+      titleEn:
+        action === "approve"
+          ? "Withdrawal request approved"
+          : "Withdrawal request rejected",
+      messageAr:
+        action === "approve"
+          ? `تمت الموافقة على طلب سحب ${amount} ${currency}`
+          : `تم رفض طلب سحب ${amount} ${currency}`,
+      messageEn:
+        action === "approve"
+          ? `Your withdrawal request for ${amount} ${currency} has been approved by platform admin.`
+          : `Your withdrawal request for ${amount} ${currency} has been rejected by platform admin.`,
+      metadata: {
+        transactionId: transaction._id,
+        action,
+        note: reviewNote,
+        amount,
+        currency,
+      },
+      updatedBalance:
+        action === "approve"
+          ? { [currency]: Number(updatedUser?.balance?.[currency] || 0) }
+          : undefined,
+    });
+
+    const message =
+      action === "approve"
+        ? "Withdrawal request approved"
+        : "Withdrawal request rejected";
+
+    res.json({
+      success: true,
+      message,
+      data: transaction,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Error reviewing withdrawal request",
       error: error.message,
     });
   }

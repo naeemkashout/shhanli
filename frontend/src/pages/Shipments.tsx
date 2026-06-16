@@ -144,6 +144,10 @@ export default function Shipments() {
 
   const [shipments, setShipments] = useState<Shipment[]>([]);
   const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
+  const [limit] = useState(20);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalItems, setTotalItems] = useState(0);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [companyFilter, setCompanyFilter] = useState<string>("all");
@@ -173,12 +177,18 @@ export default function Shipments() {
         setLoading(true);
         const response = await shipmentService.getUserShipments({
           status: statusFilter === "all" ? undefined : statusFilter,
-          page: 1,
-          limit: 100,
+          search: searchTerm?.trim() || undefined,
+          company: companyFilter === "all" ? undefined : companyFilter,
+          dateFrom: dateFrom || undefined,
+          dateTo: dateTo || undefined,
+          page,
+          limit,
         });
 
         if (response.success && response.data) {
           setShipments(response.data);
+          setTotalPages(response.pagination?.pages || 1);
+          setTotalItems(response.pagination?.total || response.data.length);
         }
       } catch (error: any) {
         console.error("Error loading shipments:", error);
@@ -193,7 +203,11 @@ export default function Shipments() {
     };
 
     loadShipments();
-  }, [statusFilter, language]);
+  }, [statusFilter, companyFilter, dateFrom, dateTo, searchTerm, language, page]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [statusFilter, companyFilter, dateFrom, dateTo, searchTerm]);
 
   useEffect(() => {
     const loadCompanyLogos = async () => {
@@ -437,35 +451,7 @@ export default function Shipments() {
     );
   };
 
-  // Filter shipments based on search term, status, and date range
-  const filteredShipments = shipments.filter((shipment) => {
-    const matchesSearch =
-      shipment.trackingNumber
-        .toLowerCase()
-        .includes(searchTerm.toLowerCase()) ||
-      shipment.sender.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      shipment.receivers[0]?.name
-        .toLowerCase()
-        .includes(searchTerm.toLowerCase());
-
-    const matchesStatus =
-      statusFilter === "all" || shipment.status === statusFilter;
-
-    const matchesCompany =
-      companyFilter === "all" ||
-      shipment.shippingCompany?.name === companyFilter;
-
-    // Date filtering
-    const shipmentDate = new Date(shipment.createdAt);
-    const fromDate = dateFrom ? new Date(dateFrom) : null;
-    const toDate = dateTo ? new Date(dateTo) : null;
-
-    const matchesDateFrom = !fromDate || shipmentDate >= fromDate;
-    const matchesDateTo = !toDate || shipmentDate <= toDate;
-    const matchesDate = matchesDateFrom && matchesDateTo;
-
-    return matchesSearch && matchesStatus && matchesCompany && matchesDate;
-  });
+  const filteredShipments = shipments;
 
   const companyFilterOptions = useMemo(() => {
     const companies = Array.from(
@@ -1532,6 +1518,34 @@ export default function Shipments() {
         </Card>
       )}
 
+      {(totalPages > 1 || page > 1) && (
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 mt-4">
+          <p className="text-sm text-gray-600">
+            {language === "ar"
+              ? `الصفحة ${page} من ${totalPages}`
+              : `Page ${page} of ${totalPages}`}
+          </p>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPage((prev) => Math.max(prev - 1, 1))}
+              disabled={page <= 1}
+            >
+              {language === "ar" ? t("shipment.previous") : t("shipment.previous")}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPage((prev) => Math.min(prev + 1, totalPages))}
+              disabled={page >= totalPages}
+            >
+              {language === "ar" ? t("shipment.next") : t("shipment.next")}
+            </Button>
+          </div>
+        </div>
+      )}
+
       {/* Shipment Details Dialog */}
       <Dialog open={isDetailsOpen} onOpenChange={setIsDetailsOpen}>
         <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
@@ -1573,25 +1587,37 @@ export default function Shipments() {
                       <span className="font-medium">
                         {language === "ar" ? "الاسم:" : "Name:"}
                       </span>{" "}
-                      {selectedShipment.sender.name}
+                      {selectedShipment.sender.name || "-"}
                     </p>
                     <p>
                       <span className="font-medium">
                         {language === "ar" ? "الهاتف:" : "Phone:"}
                       </span>{" "}
-                      {selectedShipment.sender.phone}
+                      {selectedShipment.sender.phone || "-"}
+                    </p>
+                    <p>
+                      <span className="font-medium">
+                        {language === "ar" ? "البريد الإلكتروني:" : "Email:"}
+                      </span>{" "}
+                      {selectedShipment.sender.email || "-"}
                     </p>
                     <p>
                       <span className="font-medium">
                         {language === "ar" ? "العنوان:" : "Address:"}
                       </span>{" "}
-                      {selectedShipment.sender.country}
+                      {selectedShipment.sender.street || selectedShipment.sender.address || "-"}
                     </p>
                     <p>
                       <span className="font-medium">
                         {language === "ar" ? "المدينة:" : "City:"}
                       </span>{" "}
-                      {selectedShipment.sender.city}
+                      {selectedShipment.sender.city || "-"}
+                    </p>
+                    <p>
+                      <span className="font-medium">
+                        {language === "ar" ? "الدولة:" : "Country:"}
+                      </span>{" "}
+                      {selectedShipment.sender.country || "-"}
                     </p>
                   </div>
                 </div>
@@ -1626,13 +1652,19 @@ export default function Shipments() {
                           <span className="font-medium">
                             {language === "ar" ? "العنوان:" : "Address:"}
                           </span>{" "}
-                          {receiver.country}
+                          {receiver.street || receiver.address || receiver.country || "-"}
                         </p>
                         <p>
                           <span className="font-medium">
                             {language === "ar" ? "المدينة:" : "City:"}
                           </span>{" "}
-                          {receiver.city}
+                          {receiver.city || "-"}
+                        </p>
+                        <p>
+                          <span className="font-medium">
+                            {language === "ar" ? "الدولة:" : "Country:"}
+                          </span>{" "}
+                          {receiver.country || "-"}
                         </p>
                       </div>
                     ))}
@@ -1657,20 +1689,34 @@ export default function Shipments() {
                     <span className="font-medium">
                       {language === "ar" ? "الوزن:" : "Weight:"}
                     </span>{" "}
-                    {selectedShipment.package.weight} kg
+                    {selectedShipment.package.weight || "-"} kg
                   </p>
                   <p>
                     <span className="font-medium">
                       {language === "ar" ? "القيمة:" : "Value:"}
                     </span>{" "}
-                    {selectedShipment.package.value}{" "}
-                    {selectedShipment.package.currency}
+                    {selectedShipment.package.value || "-"}{" "}
+                    {selectedShipment.package.currency || ""}
                   </p>
                   <p>
                     <span className="font-medium">
                       {language === "ar" ? "شركة الشحن:" : "Company:"}
                     </span>{" "}
-                    {selectedShipment.shippingCompany.name}
+                    {selectedShipment.shippingCompany.name || "-"}
+                  </p>
+                  <p>
+                    <span className="font-medium">
+                      {language === "ar" ? "الأبعاد:" : "Dimensions:"}
+                    </span>{" "}
+                    {(selectedShipment.package.length || selectedShipment.package.width || selectedShipment.package.height)
+                      ? `${selectedShipment.package.length || "-"} x ${selectedShipment.package.width || "-"} x ${selectedShipment.package.height || "-"} cm`
+                      : selectedShipment.package.dimensions || "-"}
+                  </p>
+                  <p>
+                    <span className="font-medium">
+                      {language === "ar" ? "قابل للكسر:" : "Fragile:"}
+                    </span>{" "}
+                    {selectedShipment.package.fragile ? (language === "ar" ? "نعم" : "Yes") : (language === "ar" ? "لا" : "No")}
                   </p>
                 </div>
                 <p className="text-sm">

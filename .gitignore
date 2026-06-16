@@ -22,3 +22,8 @@ out/
 
 # Logs
 *.log
+
+# Firebase service account (keep out of repo)
+backend/service-account.json
+
+*.json

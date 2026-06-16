@@ -92,6 +92,8 @@ export default function FinancialTransactions() {
   const [filterStatus, setFilterStatus] = useState<TransactionStatus>("all");
   const [filterDateFrom, setFilterDateFrom] = useState("");
   const [filterDateTo, setFilterDateTo] = useState("");
+  const [page, setPage] = useState(1);
+  const [limit] = useState(20);
 
   useEffect(() => {
     loadTransactions();
@@ -171,6 +173,26 @@ export default function FinancialTransactions() {
     filterDateFrom,
     filterDateTo,
   ]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [searchQuery, filterType, filterCurrency, filterStatus, filterDateFrom, filterDateTo]);
+
+  const pagedTransactions = useMemo(() => {
+    const startIndex = (page - 1) * limit;
+    return filteredTransactions.slice(startIndex, startIndex + limit);
+  }, [filteredTransactions, page, limit]);
+
+  const totalPages = Math.max(
+    1,
+    Math.ceil(filteredTransactions.length / limit),
+  );
+
+  useEffect(() => {
+    if (page > totalPages) {
+      setPage(totalPages);
+    }
+  }, [page, totalPages]);
 
   const formatCurrency = (amount: number, currency: Currency) => {
     if (currency === "SYP") {
@@ -773,13 +795,13 @@ export default function FinancialTransactions() {
             </div>
           ) : (
             <div className="space-y-4">
-              {filteredTransactions.length === 0 ? (
+              {pagedTransactions.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
                   <Search className="h-12 w-12 mx-auto mb-3 opacity-50" />
                   <p>{t("noMatchingTransactions")}</p>
                 </div>
               ) : (
-                filteredTransactions.map((transaction) => (
+                pagedTransactions.map((transaction) => (
                   <div
                     key={transaction.id}
                     className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-4 border rounded-lg hover:bg-muted/50 transition-colors"
@@ -884,6 +906,34 @@ export default function FinancialTransactions() {
                     </div>
                   </div>
                 ))
+              )}
+
+              {(totalPages > 1 || page > 1) && (
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-3 mt-4">
+                  <p className="text-sm text-gray-600">
+                    {language === "ar"
+                      ? `الصفحة ${page} من ${totalPages}`
+                      : `Page ${page} of ${totalPages}`}
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setPage((prev) => Math.max(prev - 1, 1))}
+                      disabled={page <= 1}
+                    >
+                      {language === "ar" ? "السابق" : "Previous"}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setPage((prev) => Math.min(prev + 1, totalPages))}
+                      disabled={page >= totalPages}
+                    >
+                      {language === "ar" ? "التالي" : "Next"}
+                    </Button>
+                  </div>
+                </div>
               )}
             </div>
           )}

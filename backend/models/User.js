@@ -77,6 +77,10 @@ const userSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
+    fcmTokens: {
+      type: [String],
+      default: [],
+    },
     refreshToken: {
       type: String,
       select: false,

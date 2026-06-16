@@ -1,7 +1,11 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:webview_flutter/webview_flutter.dart';
+
+import 'firebase_messaging_service.dart';
+import 'services/api_service.dart';
 
 const String _defaultDebugSiteUrl = 'http://10.0.2.2:5173';
 const String _defaultReleaseSiteUrl = 'https://your-production-site.com';
@@ -9,10 +13,14 @@ const String siteUrl = kReleaseMode
     ? String.fromEnvironment('SITE_URL', defaultValue: _defaultReleaseSiteUrl)
     : String.fromEnvironment('SITE_URL', defaultValue: _defaultDebugSiteUrl);
 
-bool get _isUnconfiguredReleaseUrl => kReleaseMode && siteUrl == _defaultReleaseSiteUrl;
+bool get _isUnconfiguredReleaseUrl =>
+    kReleaseMode && siteUrl == _defaultReleaseSiteUrl;
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp();
+  await ApiService.instance.initialize();
+  await FirebaseMessagingService.instance.init();
   runApp(const ShipMeWebViewApp());
 }
 
@@ -163,6 +171,8 @@ class _WebSiteScreenState extends State<WebSiteScreen> {
                     el.href = fixUrl(el.href);
                   }
                 });
+
+
 
                 document.querySelectorAll('[action]').forEach((el) => {
                   if (el.action) {

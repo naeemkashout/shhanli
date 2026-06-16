@@ -32,6 +32,8 @@ export default function CancellationRequests() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] =
     useState<(typeof statusOptions)[number]>("pending");
+  const [companyId, setCompanyId] = useState("");
+  const [companies, setCompanies] = useState<any[]>([]);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [selectedReason, setSelectedReason] = useState<{
@@ -46,7 +48,20 @@ export default function CancellationRequests() {
 
   useEffect(() => {
     fetchRequests();
-  }, [search, statusFilter, page]);
+  }, [search, statusFilter, companyId, page]);
+
+  useEffect(() => {
+    const loadCompanies = async () => {
+      try {
+        const response = await adminService.getAllCompanies({ page: 1, limit: 1000 });
+        setCompanies(response.data || []);
+      } catch {
+        setCompanies([]);
+      }
+    };
+
+    loadCompanies();
+  }, []);
 
   const fetchRequests = async () => {
     try {
@@ -54,6 +69,7 @@ export default function CancellationRequests() {
       const response = await adminService.getCancellationRequests({
         search,
         status: statusFilter,
+        companyId,
         page,
         limit: 10,
       });
@@ -155,6 +171,21 @@ export default function CancellationRequests() {
               />
             </div>
             <select
+              value={companyId}
+              onChange={(e) => {
+                setPage(1);
+                setCompanyId(e.target.value);
+              }}
+              className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="">{tr("كل الشركات", "All companies")}</option>
+              {companies.map((company) => (
+                <option key={company._id} value={company._id}>
+                  {company.name}
+                </option>
+              ))}
+            </select>
+            <select
               value={statusFilter}
               onChange={(e) => {
                 setPage(1);
@@ -194,6 +225,7 @@ export default function CancellationRequests() {
                       <TableHead>المستخدم</TableHead>
                       <TableHead>من</TableHead>
                       <TableHead>إلى</TableHead>
+                      <TableHead>الشركة</TableHead>
                       <TableHead>سبب الإلغاء</TableHead>
                       <TableHead>حالة الطلب</TableHead>
                       <TableHead>تاريخ الطلب</TableHead>
@@ -269,6 +301,9 @@ export default function CancellationRequests() {
                             {getCancellationStatusBadge(
                               shipment.cancellationRequest?.status,
                             )}
+                          </TableCell>
+                          <TableCell className="text-sm break-words">
+                            {shipment.shippingCompany?.name || "-"}
                           </TableCell>
                           <TableCell className="text-sm">
                             {shipment.cancellationRequest?.requestedAt

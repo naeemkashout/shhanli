@@ -79,6 +79,10 @@ class ShipmentService {
 
   async getUserShipments(params?: {
     status?: string;
+    search?: string;
+    company?: string;
+    dateFrom?: string;
+    dateTo?: string;
     page?: number;
     limit?: number;
   }): Promise<any> {

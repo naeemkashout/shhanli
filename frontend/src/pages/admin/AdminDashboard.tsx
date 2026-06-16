@@ -258,6 +258,58 @@ export default function AdminDashboard() {
             </CardContent>
           </Card>
         )}
+
+        {isPlatformAdmin && (
+          <Card
+            className="hover:shadow-lg transition-shadow cursor-pointer"
+            onClick={() => navigate("/admin/edit-requests")}
+          >
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-600">
+                    طلبات تعديل الشحنات
+                  </p>
+                  <p className="text-3xl font-bold text-gray-900 mt-2">
+                    {stats?.requestCounts?.editRequests || 0}
+                  </p>
+                  <p className="text-sm text-gray-600 mt-1">
+                    {tr("فتح صفحة التعديلات", "Open edit requests")}
+                  </p>
+                </div>
+                <div className="p-3 bg-blue-100 rounded-full">
+                  <Activity className="w-8 h-8 text-blue-600" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {isPlatformAdmin && (
+          <Card
+            className="hover:shadow-lg transition-shadow cursor-pointer"
+            onClick={() => navigate("/admin/cancellation-requests")}
+          >
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-600">
+                    طلبات إلغاء الشحنات
+                  </p>
+                  <p className="text-3xl font-bold text-gray-900 mt-2">
+                    {stats?.requestCounts?.cancellationRequests || 0}
+                  </p>
+                  <p className="text-sm text-gray-600 mt-1">
+                    {tr("فتح صفحة الإلغاءات", "Open cancellation requests")}
+                  </p>
+                </div>
+                <div className="p-3 bg-red-100 rounded-full">
+                  <Clock className="w-8 h-8 text-red-600" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
