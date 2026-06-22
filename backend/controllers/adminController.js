@@ -402,31 +402,27 @@ const PDFDocument = require("pdfkit");
 const { createAndEmitNotification } = require("./notificationController");
 
 const EDITABLE_SHIPMENT_TOP_LEVEL_FIELDS = new Set([
-  "shippingType",
   "sender",
   "receivers",
   "package",
-  "notes",
-  "estimatedDelivery",
-  "actualDelivery",
 ]);
+
+const EDITABLE_SHIPMENT_NESTED_FIELDS = {
+  sender: new Set(["name", "phone", "email"]),
+  receivers: new Set(["name", "phone", "email"]),
+  package: new Set(["type", "description", "fragile", "packagingRequested"]),
+};
 
 const isPlainObject = (value) =>
   Boolean(value) && typeof value === "object" && !Array.isArray(value);
 
-const sanitizeNestedObject = (value) => {
-  if (Array.isArray(value)) {
-    return value.map((item) =>
-      isPlainObject(item) ? sanitizeNestedObject(item) : item,
-    );
-  }
-
-  if (!isPlainObject(value)) return value;
+const sanitizeAllowedFields = (value, allowedKeys) => {
+  if (!isPlainObject(value)) return {};
 
   const next = {};
   Object.entries(value).forEach(([key, nestedValue]) => {
-    if (["__proto__", "prototype", "constructor"].includes(key)) return;
-    next[key] = sanitizeNestedObject(nestedValue);
+    if (!allowedKeys.has(key)) return;
+    next[key] = nestedValue;
   });
 
   return next;
@@ -445,7 +441,61 @@ const pickEditableShipmentUpdates = (updates) => {
       rejectedKeys.push(key);
       return;
     }
-    sanitizedUpdates[key] = sanitizeNestedObject(value);
+
+    if (key === "sender") {
+      if (!isPlainObject(value)) {
+        rejectedKeys.push(key);
+        return;
+      }
+      sanitizedUpdates.sender = sanitizeAllowedFields(
+        value,
+        EDITABLE_SHIPMENT_NESTED_FIELDS.sender,
+      );
+      Object.keys(value).forEach((nestedKey) => {
+        if (!EDITABLE_SHIPMENT_NESTED_FIELDS.sender.has(nestedKey)) {
+          rejectedKeys.push(`sender.${nestedKey}`);
+        }
+      });
+      return;
+    }
+
+    if (key === "receivers") {
+      if (!Array.isArray(value)) {
+        rejectedKeys.push(key);
+        return;
+      }
+      sanitizedUpdates.receivers = value.map((item) => {
+        if (!isPlainObject(item)) return item;
+        const next = sanitizeAllowedFields(
+          item,
+          EDITABLE_SHIPMENT_NESTED_FIELDS.receivers,
+        );
+        Object.keys(item).forEach((nestedKey) => {
+          if (!EDITABLE_SHIPMENT_NESTED_FIELDS.receivers.has(nestedKey)) {
+            rejectedKeys.push(`receivers.${nestedKey}`);
+          }
+        });
+        return next;
+      });
+      return;
+    }
+
+    if (key === "package") {
+      if (!isPlainObject(value)) {
+        rejectedKeys.push(key);
+        return;
+      }
+      sanitizedUpdates.package = sanitizeAllowedFields(
+        value,
+        EDITABLE_SHIPMENT_NESTED_FIELDS.package,
+      );
+      Object.keys(value).forEach((nestedKey) => {
+        if (!EDITABLE_SHIPMENT_NESTED_FIELDS.package.has(nestedKey)) {
+          rejectedKeys.push(`package.${nestedKey}`);
+        }
+      });
+      return;
+    }
   });
 
   return { sanitizedUpdates, rejectedKeys };
@@ -508,6 +558,134 @@ const mergeEditableShipmentUpdates = (shipment, sanitizedUpdates) => {
   }
 
   return mergedUpdates;
+};
+
+const recalculateShipmentCost = async (shipment) => {
+  const ShippingCompany = require("../models/ShippingCompany");
+  const {
+    resolveInternationalPerKgRate,
+    resolveShipmentOffer,
+  } = require("./shipmentController");
+
+  const shippingCompany = await ShippingCompany.findById(
+    shipment.shippingCompany?.id,
+  );
+  if (!shippingCompany) {
+    throw new Error("Associated shipping company not found");
+  }
+
+  const newShippingMode = shipment.shippingMode || "standard";
+  if (newShippingMode === "express" && !shippingCompany.expressService?.enabled) {
+    throw new Error("Selected company does not support express shipping");
+  }
+
+  const newPackagingRequested = Boolean(
+    shipment.package?.packagingRequested || false,
+  );
+  if (
+    newPackagingRequested &&
+    !shippingCompany.packagingService?.enabled
+  ) {
+    throw new Error("Selected company does not support packaging service");
+  }
+
+  const paymentMethod = String(
+    shipment.cost?.paymentMethod || "wallet",
+  ).trim();
+  if (paymentMethod === "cod" && !shippingCompany.codService?.enabled) {
+    throw new Error(
+      "Selected company does not support cash on delivery",
+    );
+  }
+
+  const actualWeight = Number(shipment.package?.weight || 0);
+  const length = Number(shipment.package?.length || 0);
+  const width = Number(shipment.package?.width || 0);
+  const height = Number(shipment.package?.height || 0);
+  const volumetricDivisor = Number(
+    shipment.cost?.volumetricDivisor ||
+      shippingCompany.volumetricDivisor ||
+      6000,
+  );
+  const volumetricWeight =
+    length && width && height
+      ? (length * width * height) / volumetricDivisor
+      : 0;
+  const billingWeight = Math.max(actualWeight, volumetricWeight);
+  const firstReceiverCountry = shipment.receivers?.[0]?.country;
+  const internationalRate = resolveInternationalPerKgRate(
+    shippingCompany,
+    firstReceiverCountry,
+    billingWeight,
+  );
+  const pricePerKg =
+    shipment.shippingType === "international"
+      ? internationalRate.rate
+      : Number(shippingCompany.pricing?.localPerKgSYP || 0);
+
+  const selectedOffer = resolveShipmentOffer(
+    shippingCompany,
+    shipment.offerId,
+  );
+
+  const baseAmount = selectedOffer
+    ? Number(
+        shipment.shippingType === "international"
+          ? selectedOffer.internationalPriceUSD ?? selectedOffer.internationalPrice ?? 0
+          : selectedOffer.localPriceSYP ?? selectedOffer.localPrice ?? 0,
+      )
+    : billingWeight * pricePerKg;
+
+  const codFee = paymentMethod === "cod"
+    ? Number(
+        selectedOffer
+          ? shipment.shippingType === "international"
+            ? selectedOffer.codFeeUSD || 0
+            : selectedOffer.codFeeSYP ?? selectedOffer.codFee ?? 0
+          : shipment.shippingType === "international"
+            ? shippingCompany.codService?.internationalFeeUSD || 0
+            : shippingCompany.codService?.localFeeSYP || 0,
+      )
+    : 0;
+
+  const expressFee = newShippingMode === "express"
+    ? Number(
+        selectedOffer
+          ? shipment.shippingType === "international"
+            ? selectedOffer.expressFeeUSD || 0
+            : selectedOffer.expressFeeSYP || 0
+          : shipment.shippingType === "international"
+            ? shippingCompany.expressService?.internationalFeeUSD || 0
+            : shippingCompany.expressService?.localFeeSYP || 0,
+      )
+    : 0;
+
+  const packagingFee = newPackagingRequested
+    ? Number(
+        shipment.shippingType === "international"
+          ? shippingCompany.packagingService?.internationalFeeUSD || 0
+          : shippingCompany.packagingService?.localFeeSYP || 0,
+      )
+    : 0;
+
+  const totalAmount = baseAmount + codFee + expressFee + packagingFee;
+  const safeTotalAmount = Number(totalAmount || 0) < 0 ? 0 : Number(totalAmount || 0);
+  const costCurrency = shipment.shippingType === "international" ? "USD" : "SYP";
+
+  shipment.cost = {
+    ...(shipment.cost || {}),
+    amount: safeTotalAmount,
+    baseAmount,
+    codFee,
+    expressFee,
+    packagingFee,
+    currency: costCurrency,
+    paymentMethod,
+    volumetricDivisor,
+    volumetricWeight,
+    actualWeight,
+    billingWeight,
+  };
 };
 
 // @desc    Get admin dashboard stats
@@ -1554,6 +1732,15 @@ exports.reviewEditRequest = async (req, res) => {
       });
     }
 
+    const originalCostAmount = Number(shipment.cost?.amount || 0);
+    const originalPaymentMethod = String(
+      shipment.cost?.paymentMethod || "wallet",
+    ).trim().toLowerCase();
+    const originalCostCurrency = String(
+      shipment.cost?.currency ||
+        (shipment.shippingType === "international" ? "USD" : "SYP"),
+    ).toUpperCase();
+
     shipment.editRequest.status =
       action === "approve" ? "approved" : "rejected";
     shipment.editRequest.reviewNote = String(note || "").trim();
@@ -1574,6 +1761,175 @@ exports.reviewEditRequest = async (req, res) => {
         if (typeof mergedUpdates[field] === "undefined") return;
         shipment.set(field, mergedUpdates[field]);
       });
+
+      if (
+        appliedUpdateFields.includes("shippingMode") ||
+        appliedUpdateFields.includes("package")
+      ) {
+        await recalculateShipmentCost(shipment);
+
+        const newCostAmount = Number(shipment.cost?.amount || 0);
+        const newPaymentMethod = String(
+          shipment.cost?.paymentMethod || "wallet",
+        ).trim().toLowerCase();
+        const refundCurrency = String(
+          shipment.cost?.currency ||
+            (shipment.shippingType === "international" ? "USD" : "SYP"),
+        ).toUpperCase();
+
+        if (
+          originalPaymentMethod === "wallet" &&
+          newPaymentMethod === "wallet"
+        ) {
+          if (newCostAmount < originalCostAmount) {
+            const refundAmount = Number(originalCostAmount - newCostAmount);
+            if (refundAmount > 0) {
+              const user = await User.findById(shipment.userId);
+              if (!user) {
+                return res.status(404).json({
+                  success: false,
+                  message: "User not found for this shipment",
+                });
+              }
+
+              const balanceBefore = Number(user.balance?.[refundCurrency] || 0);
+              const updatedUser = await User.findOneAndUpdate(
+                {
+                  _id: user._id,
+                },
+                {
+                  $inc: { [`balance.${refundCurrency}`]: refundAmount },
+                },
+                { new: true, runValidators: true },
+              );
+
+              if (!updatedUser) {
+                return res.status(500).json({
+                  success: false,
+                  message: "Unable to update wallet balance for refund",
+                });
+              }
+
+              const balanceAfter = Number(
+                updatedUser.balance?.[refundCurrency] || 0,
+              );
+              const normalizedBalance = {
+                USD: Number(updatedUser.balance?.USD || 0),
+                SYP: Number(updatedUser.balance?.SYP || 0),
+              };
+
+              await Transaction.create({
+                userId: user._id,
+                type: "refund",
+                amount: refundAmount,
+                currency: refundCurrency,
+                status: "completed",
+                method: "wallet",
+                relatedShipment: shipment._id,
+                description: `Refund for shipment ${shipment.trackingNumber} after edit request approval`,
+                balanceBefore,
+                balanceAfter,
+                processedBy: req.user.id,
+                processedAt: new Date(),
+              });
+
+              await createAndEmitNotification(req, {
+                userId: user._id,
+                type: "wallet",
+                titleAr: "تم استرداد مبلغ من المحفظة",
+                titleEn: "Wallet Refund Issued",
+                messageAr: `تمت إعادة ${refundAmount} ${refundCurrency} إلى محفظتك بعد تعديل الشحنة ${shipment.trackingNumber}.`, 
+                messageEn: `${refundAmount} ${refundCurrency} was refunded to your wallet after shipment edit approval for ${shipment.trackingNumber}.`, 
+                metadata: {
+                  shipmentId: shipment._id,
+                  trackingNumber: shipment.trackingNumber,
+                  amount: refundAmount,
+                  currency: refundCurrency,
+                  reason: "edit-request-cost-decrease",
+                },
+                updatedBalance: normalizedBalance,
+              });
+            }
+          } else if (newCostAmount > originalCostAmount) {
+            const deductionAmount = Number(newCostAmount - originalCostAmount);
+            const user = await User.findById(shipment.userId);
+            if (!user) {
+              return res.status(404).json({
+                success: false,
+                message: "User not found for this shipment",
+              });
+            }
+
+            const userBalance = Number(user.balance?.[refundCurrency] || 0);
+            if (userBalance < deductionAmount) {
+              return res.status(400).json({
+                success: false,
+                message:
+                  "Insufficient wallet balance to apply the updated shipment amount after adding packaging or other service.",
+              });
+            }
+
+            const balanceBefore = userBalance;
+            const updatedUser = await User.findOneAndUpdate(
+              {
+                _id: user._id,
+                [`balance.${refundCurrency}`]: { $gte: deductionAmount },
+              },
+              { $inc: { [`balance.${refundCurrency}`]: -deductionAmount } },
+              { new: true, runValidators: true },
+            );
+
+            if (!updatedUser) {
+              return res.status(500).json({
+                success: false,
+                message: "Unable to update wallet balance for the shipment user.",
+              });
+            }
+
+            const balanceAfter = Number(
+              updatedUser.balance?.[refundCurrency] || 0,
+            );
+            const normalizedBalance = {
+              USD: Number(updatedUser.balance?.USD || 0),
+              SYP: Number(updatedUser.balance?.SYP || 0),
+            };
+
+            await Transaction.create({
+              userId: user._id,
+              type: "payment",
+              amount: deductionAmount,
+              currency: refundCurrency,
+              status: "completed",
+              method: "wallet",
+              relatedShipment: shipment._id,
+              description: `Additional deduction for shipment ${shipment.trackingNumber} after edit request approval`,
+              balanceBefore,
+              balanceAfter,
+              processedBy: req.user.id,
+              processedAt: new Date(),
+            });
+
+            await createAndEmitNotification(req, {
+              userId: user._id,
+              type: "wallet",
+              titleAr: "تم خصم مبلغ إضافي من المحفظة",
+              titleEn: "Additional Wallet Deduction",
+              messageAr: `تم خصم ${deductionAmount} ${refundCurrency} من محفظتك بعد تحديث الشحنة ${shipment.trackingNumber}.`, 
+              messageEn: `${deductionAmount} ${refundCurrency} was deducted from your wallet after shipment edit approval for ${shipment.trackingNumber}.`, 
+              metadata: {
+                shipmentId: shipment._id,
+                trackingNumber: shipment.trackingNumber,
+                amount: deductionAmount,
+                currency: refundCurrency,
+                reason: "edit-request-cost-increase",
+              },
+              updatedBalance: normalizedBalance,
+            });
+
+            shipment.cost.isPaid = true;
+          }
+        }
+      }
     }
 
     shipment.statusHistory.push({

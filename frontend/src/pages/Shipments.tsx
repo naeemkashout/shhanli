@@ -76,9 +76,15 @@ interface Shipment {
   package: {
     type: string;
     weight: number;
+    length?: number;
+    width?: number;
+    height?: number;
+    dimensions?: string;
     description: string;
     value: number;
     currency: string;
+    fragile?: boolean;
+    packagingRequested?: boolean;
   };
   status:
     | "pending"
@@ -105,6 +111,7 @@ interface Shipment {
     amount: number;
     currency: string;
     paymentMethod: string;
+    packagingFee?: number;
   };
   cancellationRequest?: {
     isRequested?: boolean;
@@ -1220,6 +1227,20 @@ export default function Shipments() {
                       {shipment.cost.currency}
                     </span>
                   </p>
+                  <p className="flex items-center justify-between">
+                    <span className="font-medium">
+                      {language === "ar" ? "التغليف:" : "Packaging:"}
+                    </span>
+                    <span className="text-right">
+                      {shipment.package.packagingRequested
+                        ? language === "ar"
+                          ? "مفعلة"
+                          : "Enabled"
+                        : language === "ar"
+                          ? "غير مفعلة"
+                          : "Disabled"}
+                    </span>
+                  </p>
                   {shipment.weightAdjustment?.note?.trim() && (
                     <div className="rounded-md bg-rose-50 border border-rose-300 p-2 text-xs text-rose-900">
                       <span className="font-medium">
@@ -1428,6 +1449,18 @@ export default function Shipments() {
                         {shipment.cost.amount.toLocaleString()}{" "}
                         {shipment.cost.currency}
                       </span>
+                    </div>
+                    <div className="mt-2 text-sm text-gray-500">
+                      <span className="font-medium">
+                        {language === "ar" ? "التغليف:" : "Packaging:"}
+                      </span>{" "}
+                      {shipment.package.packagingRequested
+                        ? language === "ar"
+                          ? "مفعلة"
+                          : "Enabled"
+                        : language === "ar"
+                          ? "غير مفعلة"
+                          : "Disabled"}
                     </div>
                     {shipment.weightAdjustment?.note?.trim() && (
                       <p className="mt-2 text-xs text-rose-900 bg-rose-50 border border-rose-300 rounded-md px-2 py-1">
@@ -1718,6 +1751,18 @@ export default function Shipments() {
                     </span>{" "}
                     {selectedShipment.package.fragile ? (language === "ar" ? "نعم" : "Yes") : (language === "ar" ? "لا" : "No")}
                   </p>
+                  <p>
+                    <span className="font-medium">
+                      {language === "ar" ? "التغليف:" : "Packaging:"}
+                    </span>{" "}
+                    {selectedShipment.package.packagingRequested
+                      ? language === "ar"
+                        ? "مفعلة"
+                        : "Enabled"
+                      : language === "ar"
+                        ? "غير مفعلة"
+                        : "Disabled"}
+                  </p>
                 </div>
                 <p className="text-sm">
                   <span className="font-medium">
@@ -1761,6 +1806,15 @@ export default function Shipments() {
                           : "Current Location:"}
                       </span>{" "}
                       {getCurrentShipmentLocation(selectedShipment)}
+                    </p>
+                  )}
+                  {selectedShipment.package.packagingRequested &&
+                    typeof selectedShipment.cost.packagingFee !== "undefined" && (
+                    <p>
+                      <span className="font-medium">
+                        {language === "ar" ? "رسوم التغليف:" : "Packaging Fee:"}
+                      </span>{" "}
+                      {selectedShipment.cost.packagingFee.toLocaleString()} {selectedShipment.cost.currency}
                     </p>
                   )}
                 </div>

@@ -47,8 +47,36 @@ export default function EditRequests() {
     title: string;
     text: string;
   } | null>(null);
-  const [reviewUpdatesForm, setReviewUpdatesForm] = useState({
-    shippingType: "",
+  type ReviewUpdatesForm = {
+    shippingMode: "" | "standard" | "express";
+    senderName: string;
+    senderPhone: string;
+    senderEmail: string;
+    senderCity: string;
+    senderState: string;
+    senderCountry: string;
+    senderStreet: string;
+    receiverName: string;
+    receiverPhone: string;
+    receiverEmail: string;
+    receiverCity: string;
+    receiverState: string;
+    receiverCountry: string;
+    receiverStreet: string;
+    packageType: string;
+    packageDescription: string;
+    packageWeight: string;
+    packageLength: string;
+    packageWidth: string;
+    packageHeight: string;
+    packageValue: string;
+    packageCurrency: string;
+    packageFragile: "" | "true" | "false";
+    packagePackagingRequested: "" | "true" | "false";
+  };
+
+  const [reviewUpdatesForm, setReviewUpdatesForm] = useState<ReviewUpdatesForm>({
+    shippingMode: "",
     senderName: "",
     senderPhone: "",
     senderEmail: "",
@@ -184,7 +212,8 @@ export default function EditRequests() {
   const openReviewDialog = (shipment: any) => {
     setSelectedRequest(shipment);
     setReviewUpdatesForm({
-      shippingType: String(shipment?.shippingType || ""),
+      shippingMode:
+        shipment?.shippingMode === "express" ? "express" : "standard",
       senderName: String(shipment?.sender?.name || ""),
       senderPhone: String(shipment?.sender?.phone || ""),
       senderEmail: String(shipment?.sender?.email || ""),
@@ -207,10 +236,10 @@ export default function EditRequests() {
       packageHeight: String(shipment?.package?.height ?? ""),
       packageValue: String(shipment?.package?.value ?? ""),
       packageCurrency: String(shipment?.package?.currency || ""),
-      packageFragile: String(shipment?.package?.fragile ? "true" : "false"),
-      packagePackagingRequested: String(
-        shipment?.package?.packagingRequested ? "true" : "false",
-      ),
+      packageFragile: shipment?.package?.fragile ? "true" : "false",
+      packagePackagingRequested: shipment?.package?.packagingRequested
+        ? "true"
+        : "false",
     });
   };
 
@@ -230,52 +259,6 @@ export default function EditRequests() {
     let shipmentUpdates: Record<string, any> | undefined;
 
     if (action === "approve") {
-      const parseOptionalNumber = (
-        value: string,
-        labelAr: string,
-        labelEn: string,
-        options?: { min?: number },
-      ) => {
-        const normalized = String(value || "").trim();
-        if (!normalized) return undefined;
-
-        const parsed = Number(normalized);
-        if (!Number.isFinite(parsed)) {
-          toast.error(
-            tr(`قيمة ${labelAr} غير صالحة`, `Invalid ${labelEn} value`),
-          );
-          return null;
-        }
-
-        if (typeof options?.min === "number" && parsed < options.min) {
-          toast.error(
-            tr(
-              `${labelAr} يجب أن يكون أكبر أو يساوي ${options.min}`,
-              `${labelEn} must be greater than or equal to ${options.min}`,
-            ),
-          );
-          return null;
-        }
-
-        return parsed;
-      };
-
-      const weightValue = parseOptionalNumber(
-        reviewUpdatesForm.packageWeight,
-        "وزن الطرد",
-        "package weight",
-        { min: 0.1 },
-      );
-      if (weightValue === null) return;
-
-      const packageValue = parseOptionalNumber(
-        reviewUpdatesForm.packageValue,
-        "قيمة الطرد",
-        "package value",
-        { min: 0 },
-      );
-      if (packageValue === null) return;
-
       const keepOrTrim = (value: unknown, fallback: unknown) => {
         const normalized = String(value ?? "").trim();
         return normalized || fallback;
@@ -290,10 +273,6 @@ export default function EditRequests() {
         name: keepOrTrim(reviewUpdatesForm.senderName, baseSender.name),
         phone: keepOrTrim(reviewUpdatesForm.senderPhone, baseSender.phone),
         email: keepOrTrim(reviewUpdatesForm.senderEmail, baseSender.email),
-        city: keepOrTrim(reviewUpdatesForm.senderCity, baseSender.city),
-        state: keepOrTrim(reviewUpdatesForm.senderState, baseSender.state),
-        country: keepOrTrim(reviewUpdatesForm.senderCountry, baseSender.country),
-        street: keepOrTrim(reviewUpdatesForm.senderStreet, baseSender.street),
       };
 
       const receiver: Record<string, any> = {
@@ -301,45 +280,15 @@ export default function EditRequests() {
         name: keepOrTrim(reviewUpdatesForm.receiverName, baseReceiver.name),
         phone: keepOrTrim(reviewUpdatesForm.receiverPhone, baseReceiver.phone),
         email: keepOrTrim(reviewUpdatesForm.receiverEmail, baseReceiver.email),
-        city: keepOrTrim(reviewUpdatesForm.receiverCity, baseReceiver.city),
-        state: keepOrTrim(reviewUpdatesForm.receiverState, baseReceiver.state),
-        country: keepOrTrim(reviewUpdatesForm.receiverCountry, baseReceiver.country),
-        street: keepOrTrim(
-          reviewUpdatesForm.receiverStreet,
-          baseReceiver.street,
-        ),
       };
 
       const pkg: Record<string, any> = {
-        ...basePackage,
         type:
           reviewUpdatesForm.packageType || basePackage.type || "documents",
         description: keepOrTrim(
           reviewUpdatesForm.packageDescription,
           basePackage.description,
         ),
-        weight:
-          weightValue !== undefined
-            ? weightValue
-            : Number(basePackage.weight ?? 0),
-        length:
-          reviewUpdatesForm.packageLength.trim() !== ""
-            ? Number(reviewUpdatesForm.packageLength)
-            : Number(basePackage.length ?? 0),
-        width:
-          reviewUpdatesForm.packageWidth.trim() !== ""
-            ? Number(reviewUpdatesForm.packageWidth)
-            : Number(basePackage.width ?? 0),
-        height:
-          reviewUpdatesForm.packageHeight.trim() !== ""
-            ? Number(reviewUpdatesForm.packageHeight)
-            : Number(basePackage.height ?? 0),
-        value:
-          packageValue !== undefined
-            ? packageValue
-            : Number(basePackage.value ?? 0),
-        currency:
-          reviewUpdatesForm.packageCurrency || basePackage.currency || "USD",
         fragile:
           reviewUpdatesForm.packageFragile === "true"
             ? true
@@ -355,7 +304,6 @@ export default function EditRequests() {
       };
 
       const updates: Record<string, any> = {};
-      updates.shippingType = reviewUpdatesForm.shippingType || selectedRequest?.shippingType;
       updates.sender = sender;
       updates.receivers = [receiver];
       updates.package = pkg;
@@ -788,20 +736,15 @@ export default function EditRequests() {
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <div className="space-y-1">
-                    <Label>{tr("نوع الشحن", "Shipping type")}</Label>
+                    <Label>{tr("طريقة الشحن", "Shipping mode")}</Label>
                     <select
-                      value={reviewUpdatesForm.shippingType}
-                      onChange={(e) =>
-                        setReviewUpdatesForm((prev) => ({
-                          ...prev,
-                          shippingType: e.target.value,
-                        }))
-                      }
-                      className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm"
+                      value={reviewUpdatesForm.shippingMode}
+                      disabled
+                      className="w-full rounded-md border border-slate-300 bg-slate-100 px-3 py-2 text-sm text-gray-500"
                     >
-                      <option value="">{tr("اختر نوع الشحن", "Select shipping type")}</option>
-                      <option value="local">{tr("محلي", "Local")}</option>
-                      <option value="international">{tr("دولي", "International")}</option>
+                      <option value="">{tr("اختر نوع الشحن", "Select shipping mode")}</option>
+                      <option value="standard">{tr("عادي", "Standard")}</option>
+                      <option value="express">{tr("سريع", "Express")}</option>
                     </select>
                   </div>
                   <div className="space-y-1">
@@ -869,48 +812,32 @@ export default function EditRequests() {
                     <Label>{tr("مدينة المرسل", "Sender city")}</Label>
                     <Input
                       value={reviewUpdatesForm.senderCity}
-                      onChange={(e) =>
-                        setReviewUpdatesForm((prev) => ({
-                          ...prev,
-                          senderCity: e.target.value,
-                        }))
-                      }
+                      disabled
+                      className="bg-slate-100 text-gray-500"
                     />
                   </div>
                   <div className="space-y-1">
                     <Label>{tr("الولاية/المحافظة", "Sender state")}</Label>
                     <Input
                       value={reviewUpdatesForm.senderState}
-                      onChange={(e) =>
-                        setReviewUpdatesForm((prev) => ({
-                          ...prev,
-                          senderState: e.target.value,
-                        }))
-                      }
+                      disabled
+                      className="bg-slate-100 text-gray-500"
                     />
                   </div>
                   <div className="space-y-1">
                     <Label>{tr("البلد", "Sender country")}</Label>
                     <Input
                       value={reviewUpdatesForm.senderCountry}
-                      onChange={(e) =>
-                        setReviewUpdatesForm((prev) => ({
-                          ...prev,
-                          senderCountry: e.target.value,
-                        }))
-                      }
+                      disabled
+                      className="bg-slate-100 text-gray-500"
                     />
                   </div>
                   <div className="space-y-1">
                     <Label>{tr("عنوان المرسل", "Sender street")}</Label>
                     <Input
                       value={reviewUpdatesForm.senderStreet}
-                      onChange={(e) =>
-                        setReviewUpdatesForm((prev) => ({
-                          ...prev,
-                          senderStreet: e.target.value,
-                        }))
-                      }
+                      disabled
+                      className="bg-slate-100 text-gray-500"
                     />
                   </div>
                 </div>
@@ -956,48 +883,32 @@ export default function EditRequests() {
                     <Label>{tr("مدينة المستلم", "Receiver city")}</Label>
                     <Input
                       value={reviewUpdatesForm.receiverCity}
-                      onChange={(e) =>
-                        setReviewUpdatesForm((prev) => ({
-                          ...prev,
-                          receiverCity: e.target.value,
-                        }))
-                      }
+                      disabled
+                      className="bg-slate-100 text-gray-500"
                     />
                   </div>
                   <div className="space-y-1">
                     <Label>{tr("الولاية/المحافظة", "Receiver state")}</Label>
                     <Input
                       value={reviewUpdatesForm.receiverState}
-                      onChange={(e) =>
-                        setReviewUpdatesForm((prev) => ({
-                          ...prev,
-                          receiverState: e.target.value,
-                        }))
-                      }
+                      disabled
+                      className="bg-slate-100 text-gray-500"
                     />
                   </div>
                   <div className="space-y-1">
                     <Label>{tr("البلد", "Receiver country")}</Label>
                     <Input
                       value={reviewUpdatesForm.receiverCountry}
-                      onChange={(e) =>
-                        setReviewUpdatesForm((prev) => ({
-                          ...prev,
-                          receiverCountry: e.target.value,
-                        }))
-                      }
+                      disabled
+                      className="bg-slate-100 text-gray-500"
                     />
                   </div>
                   <div className="space-y-1">
                     <Label>{tr("عنوان المستلم", "Receiver street")}</Label>
                     <Input
                       value={reviewUpdatesForm.receiverStreet}
-                      onChange={(e) =>
-                        setReviewUpdatesForm((prev) => ({
-                          ...prev,
-                          receiverStreet: e.target.value,
-                        }))
-                      }
+                      disabled
+                      className="bg-slate-100 text-gray-500"
                     />
                   </div>
                 </div>
@@ -1022,12 +933,8 @@ export default function EditRequests() {
                       min="0.1"
                       step="0.1"
                       value={reviewUpdatesForm.packageWeight}
-                      onChange={(e) =>
-                        setReviewUpdatesForm((prev) => ({
-                          ...prev,
-                          packageWeight: e.target.value,
-                        }))
-                      }
+                      disabled
+                      className="bg-slate-100 text-gray-500"
                     />
                   </div>
                   <div className="space-y-1">
@@ -1037,25 +944,16 @@ export default function EditRequests() {
                       min="0"
                       step="0.01"
                       value={reviewUpdatesForm.packageValue}
-                      onChange={(e) =>
-                        setReviewUpdatesForm((prev) => ({
-                          ...prev,
-                          packageValue: e.target.value,
-                        }))
-                      }
+                      disabled
+                      className="bg-slate-100 text-gray-500"
                     />
                   </div>
                   <div className="space-y-1">
                     <Label>{tr("العملة", "Currency")}</Label>
                     <select
                       value={reviewUpdatesForm.packageCurrency}
-                      onChange={(e) =>
-                        setReviewUpdatesForm((prev) => ({
-                          ...prev,
-                          packageCurrency: e.target.value,
-                        }))
-                      }
-                      className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm"
+                      disabled
+                      className="w-full rounded-md border border-slate-300 bg-slate-100 px-3 py-2 text-sm text-gray-500"
                     >
                       <option value="">{tr("اختر العملة", "Select currency")}</option>
                       <option value="USD">USD</option>
@@ -1069,12 +967,8 @@ export default function EditRequests() {
                       min="0"
                       step="0.1"
                       value={reviewUpdatesForm.packageLength}
-                      onChange={(e) =>
-                        setReviewUpdatesForm((prev) => ({
-                          ...prev,
-                          packageLength: e.target.value,
-                        }))
-                      }
+                      disabled
+                      className="bg-slate-100 text-gray-500"
                     />
                   </div>
                   <div className="space-y-1">
@@ -1084,12 +978,8 @@ export default function EditRequests() {
                       min="0"
                       step="0.1"
                       value={reviewUpdatesForm.packageWidth}
-                      onChange={(e) =>
-                        setReviewUpdatesForm((prev) => ({
-                          ...prev,
-                          packageWidth: e.target.value,
-                        }))
-                      }
+                      disabled
+                      className="bg-slate-100 text-gray-500"
                     />
                   </div>
                   <div className="space-y-1">
@@ -1099,12 +989,8 @@ export default function EditRequests() {
                       min="0"
                       step="0.1"
                       value={reviewUpdatesForm.packageHeight}
-                      onChange={(e) =>
-                        setReviewUpdatesForm((prev) => ({
-                          ...prev,
-                          packageHeight: e.target.value,
-                        }))
-                      }
+                      disabled
+                      className="bg-slate-100 text-gray-500"
                     />
                   </div>
                   <div className="space-y-1">
@@ -1114,7 +1000,7 @@ export default function EditRequests() {
                       onChange={(e) =>
                         setReviewUpdatesForm((prev) => ({
                           ...prev,
-                          packageFragile: e.target.value,
+                          packageFragile: e.target.value as ReviewUpdatesForm["packageFragile"],
                         }))
                       }
                       className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm"
@@ -1131,7 +1017,7 @@ export default function EditRequests() {
                       onChange={(e) =>
                         setReviewUpdatesForm((prev) => ({
                           ...prev,
-                          packagePackagingRequested: e.target.value,
+                          packagePackagingRequested: e.target.value as ReviewUpdatesForm["packagePackagingRequested"],
                         }))
                       }
                       className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm"
